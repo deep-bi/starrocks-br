@@ -59,5 +59,5 @@ def test_should_run_incremental_when_previous_backup_exists(tmp_path: Path, mock
     assert result.exit_code == 0
 
     executed = [call.args[0] for call in db_mock.execute.call_args_list]
-    # BACKUP SNAPSHOT with partitions hint for incremental
-    assert any("BACKUP SNAPSHOT" in s and "db1.t1" in s and "PARTITIONS" in s for s in executed)
+    # BACKUP SNAPSHOT with partition hint for incremental now uses PARTITION (...) in ON list
+    assert any("BACKUP SNAPSHOT" in s and "db1.t1 PARTITION (p1, p2)" in s for s in executed)

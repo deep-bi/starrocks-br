@@ -48,14 +48,14 @@ def test_should_choose_incremental_with_empty_tables_when_no_partitions_changed(
 
 
 def test_should_issue_incremental_without_partitions_clause_when_parts_empty(fake_db):
-    """issue_backup_commands should omit PARTITIONS clause if list is empty (incremental)."""
+    """issue_backup_commands should not include a PARTITION list when empty; still includes metadata table."""
     plan = BackupPlan(backup_type="incremental", tables=["db1.t1"], partitions_by_table={"db1.t1": []})
     issue_backup_commands(fake_db, plan)
-    assert any("BACKUP SNAPSHOT repo.db1.t1" in sql for sql, _ in fake_db._exec_sql)
-    assert not any("PARTITIONS" in sql for sql, _ in fake_db._exec_sql)
+    # Expect ON (db1.t1, ops.backup_history)
+    assert any("BACKUP SNAPSHOT repo ON (db1.t1, ops.backup_history)" in sql for sql, _ in fake_db._exec_sql)
 
 
-def test_should_poll_until_finished_when_show_backup_initially_empty(fake_db, mocker):
+def test_poll_backup_empty_then_finished(fake_db, mocker):
     """poll_backup_until_done must sleep and retry on empty result, then return FINISHED."""
     fake_db._query_side_effect = [[], [("FINISHED", "2025-10-06 10:00:00")]]
     sleep_spy = mocker.patch("starrocks_bbr.backup.time.sleep")
