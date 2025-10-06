@@ -15,14 +15,18 @@ class RestoreStep:
 
 
 def table_exists(db: Database, table_name: str) -> bool:
-    rows = db.query("SELECT table_name FROM information_schema.tables WHERE table_name=%s", (table_name,))
+    rows = db.query(
+        "SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=%s",
+        (table_name,)
+    )
     return bool(rows)
 
 
-def find_full_before(db: Database, table_name: str, target_ts: str) -> Optional[Tuple[str, str]]:
+def find_full_before(db: Database, target_ts: str) -> Optional[Tuple[str, str]]:
     rows = db.query(
-        "SELECT DATE_FORMAT(MAX(backup_timestamp), '%Y-%m-%d %H:%i:%s'), MAX(snapshot_label)"
-        " FROM ops.backup_history WHERE status='FINISHED' AND backup_type='full' AND table_name IS NULL AND backup_timestamp <= %s",
+        "SELECT DATE_FORMAT(backup_timestamp, '%Y-%m-%d %H:%i:%s'), snapshot_label"
+        " FROM ops.backup_history WHERE status='FINISHED' AND backup_type='full' AND table_name IS NULL AND backup_timestamp <= %s"
+        " ORDER BY backup_timestamp DESC LIMIT 1",
         (target_ts,),
     )
     if rows and rows[0][0]:
@@ -49,13 +53,15 @@ def get_partitions_for_incremental(db: Database, snapshot_label: str) -> List[st
 
 
 def build_restore_chain(db: Database, table_name: str, target_ts: str) -> List[RestoreStep]:
-    full = find_full_before(db, table_name, target_ts)
+    full = find_full_before(db, target_ts)
     if not full:
         raise RuntimeError("No full backup found before target timestamp")
     full_ts, full_label = full
     steps: List[RestoreStep] = [RestoreStep(kind="full", snapshot_label=full_label, backup_timestamp=full_ts)]
 
     for inc_ts, inc_label in find_incrementals_before(db, table_name, target_ts):
+        if inc_ts <= full_ts:
+            continue
         parts = get_partitions_for_incremental(db, inc_label)
         steps.append(
             RestoreStep(kind="incremental", snapshot_label=inc_label, backup_timestamp=inc_ts, partitions=parts)
