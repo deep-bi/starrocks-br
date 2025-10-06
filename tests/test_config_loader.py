@@ -1,0 +1,70 @@
+from pathlib import Path
+
+import pytest
+import textwrap
+
+from starrocks_bbr.config import load_config, DatabaseConfig
+
+
+def write_yaml(tmp_path: Path, content: str) -> Path:
+    p = tmp_path / "config.yaml"
+    p.write_text(textwrap.dedent(content).strip() + "\n", encoding="utf-8")
+    return p
+
+
+def test_load_config_success(tmp_path: Path):
+    cfg_path = write_yaml(
+        tmp_path,
+        """
+        host: localhost
+        port: 9030
+        user: root
+        password: secret
+        database: ops
+        tables:
+          - db1.tableA
+          - db2.tableB
+        """,
+    )
+
+    cfg = load_config(cfg_path)
+    assert isinstance(cfg, DatabaseConfig)
+    assert cfg.host == "localhost"
+    assert cfg.port == 9030
+    assert cfg.tables == ["db1.tableA", "db2.tableB"]
+
+
+def test_load_config_missing_keys(tmp_path: Path):
+    cfg_path = write_yaml(
+        tmp_path,
+        """
+        host: localhost
+        port: 9030
+        user: root
+        password: secret
+        # database missing
+        tables: []
+        """,
+    )
+
+    with pytest.raises(ValueError) as err:
+        load_config(cfg_path)
+
+    assert "Missing required config keys" in str(err.value)
+
+
+def test_load_config_invalid_tables_type(tmp_path: Path):
+    cfg_path = write_yaml(
+        tmp_path,
+        """
+        host: localhost
+        port: 9030
+        user: root
+        password: secret
+        database: ops
+        tables: wrong
+        """,
+    )
+
+    with pytest.raises(ValueError):
+        load_config(cfg_path)
