@@ -11,13 +11,13 @@ def mocked_mysql(mocker):
     mock_cursor = mocker.MagicMock()
     mock_conn.cursor.return_value = mock_cursor
 
-    connect_mock = mocker.patch("starrocks_bbr.db.mysql.connector.connect", autospec=True)
+    connect_mock = mocker.patch("starrocks_br.db.mysql.connector.connect", autospec=True)
     connect_mock.return_value = mock_conn
     return mock_conn, mock_cursor, connect_mock
 
 
 def test_db_connect_and_execute(mocked_mysql):
-    from starrocks_bbr.db import Database
+    from starrocks_br.db import Database
 
     mock_conn, mock_cursor, _ = mocked_mysql
 
@@ -29,7 +29,7 @@ def test_db_connect_and_execute(mocked_mysql):
 
 
 def test_db_execute_many_and_query(mocked_mysql):
-    from starrocks_bbr.db import Database
+    from starrocks_br.db import Database
 
     mock_conn, mock_cursor, _ = mocked_mysql
     mock_cursor.fetchall.return_value = [(1,)]
@@ -43,7 +43,7 @@ def test_db_execute_many_and_query(mocked_mysql):
 
 
 def test_db_context_manager_closes(mocked_mysql):
-    from starrocks_bbr.db import Database
+    from starrocks_br.db import Database
 
     mock_conn, mock_cursor, _ = mocked_mysql
 

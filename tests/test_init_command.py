@@ -2,7 +2,7 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from starrocks_bbr.cli import cli
+from starrocks_br.cli import cli
 from .utils import write_cfg
 
 
@@ -10,7 +10,7 @@ def test_init_creates_metadata(monkeypatch, mocker, tmp_path: Path):
     cfg = write_cfg(tmp_path)
 
     # Patch Database class used by CLI to avoid real DB
-    db_mock_cls = mocker.patch("starrocks_bbr.cli.Database")
+    db_mock_cls = mocker.patch("starrocks_br.cli.Database")
     db_mock = db_mock_cls.return_value
 
     runner = CliRunner()

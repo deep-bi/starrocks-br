@@ -3,7 +3,7 @@ from pathlib import Path
 import yaml
 import pytest
 
-from starrocks_bbr.config import load_config
+from starrocks_br.config import load_config
 
 
 def test_should_error_when_yaml_is_empty_or_none(tmp_path: Path, monkeypatch):

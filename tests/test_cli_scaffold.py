@@ -4,7 +4,7 @@ import pytest
 import textwrap
 from click.testing import CliRunner
 
-from starrocks_bbr.cli import cli, main
+from starrocks_br.cli import cli, main
 from .utils import write_cfg
 
 
@@ -29,7 +29,7 @@ def test_init_requires_config():
 
 def test_init_with_config(sample_config: Path, mocker):
     # Mock Database to avoid real connections
-    db_mock_cls = mocker.patch("starrocks_bbr.cli.Database")
+    db_mock_cls = mocker.patch("starrocks_br.cli.Database")
 
     runner = CliRunner()
     result = runner.invoke(cli, ["init", "--config", str(sample_config)])
@@ -39,6 +39,6 @@ def test_init_with_config(sample_config: Path, mocker):
 
 def test_main_returns_exit_code_zero(sample_config: Path):
     # ensure main() wrapper returns 0 without picking up pytest args
-    from starrocks_bbr.cli import main as entry
+    from starrocks_br.cli import main as entry
 
     assert entry([]) == 0

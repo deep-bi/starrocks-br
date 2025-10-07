@@ -2,7 +2,7 @@ from pathlib import Path
 
 import tempfile
 from click.testing import CliRunner
-from starrocks_bbr.cli import cli, main
+from starrocks_br.cli import cli, main
 from tests.utils import write_cfg
 
 
@@ -21,7 +21,7 @@ def test_should_handle_invalid_option_gracefully_with_friendly_message():
 
 def test_should_execute_restore_command_and_echo_message(mocker):
     runner = CliRunner()
-    mock_run_restore = mocker.patch("starrocks_bbr.cli.run_restore", return_value=None)
+    mock_run_restore = mocker.patch("starrocks_br.cli.run_restore", return_value=None)
 
     with tempfile.TemporaryDirectory() as td:
         cfg = write_cfg(Path(td))

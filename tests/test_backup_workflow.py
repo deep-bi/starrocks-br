@@ -3,14 +3,14 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from starrocks_bbr.cli import cli
+from starrocks_br.cli import cli
 from .utils import write_cfg
 
 
 @pytest.fixture()
 def db_mock(mocker):
     # Patch Database where it is constructed (in CLI module)
-    db_cls = mocker.patch("starrocks_bbr.cli.Database")
+    db_cls = mocker.patch("starrocks_br.cli.Database")
     db = db_cls.return_value
     return db
 

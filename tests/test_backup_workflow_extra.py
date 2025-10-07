@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from starrocks_bbr.backup import (
+from starrocks_br.backup import (
     BackupPlan,
     decide_backup_plan,
     get_last_successful_backup,
@@ -41,8 +41,8 @@ def test_should_return_none_when_no_finished_backup_in_history(fake_db):
 
 def test_should_choose_incremental_with_empty_tables_when_no_partitions_changed(fake_db, mocker):
     """decide_backup_plan picks incremental with no tables when nothing changed since last backup (README §3.b.4)."""
-    mocker.patch("starrocks_bbr.backup.get_last_successful_backup", return_value="2025-10-05 12:00:00")
-    mocker.patch("starrocks_bbr.backup.get_changed_partitions_since", return_value=[])
+    mocker.patch("starrocks_br.backup.get_last_successful_backup", return_value="2025-10-05 12:00:00")
+    mocker.patch("starrocks_br.backup.get_changed_partitions_since", return_value=[])
 
     plan = decide_backup_plan(fake_db, ["db1.t1", "db2.t2"])
     assert plan.backup_type == "incremental" and plan.tables == []
@@ -59,7 +59,7 @@ def test_should_issue_incremental_without_partitions_clause_when_parts_empty(fak
 def test_poll_backup_empty_then_finished(fake_db, mocker):
     """poll_backup_until_done must sleep and retry on empty result, then return FINISHED."""
     fake_db._query_side_effect = [[], [("FINISHED", "2025-10-06 10:00:00")]]
-    sleep_spy = mocker.patch("starrocks_bbr.backup.time.sleep")
+    sleep_spy = mocker.patch("starrocks_br.backup.time.sleep")
 
     status, ts = poll_backup_until_done(fake_db)
     assert status == "FINISHED" and ts == "2025-10-06 10:00:00"
@@ -74,10 +74,10 @@ def test_should_update_history_to_failed_on_failure(fake_db):
 
 
 def test_should_mark_failed_when_issue_backup_raises(mocker, fake_db):
-    mocker.patch("starrocks_bbr.backup.decide_backup_plan", return_value=BackupPlan("full", ["t"], {}))
-    mocker.patch("starrocks_bbr.backup.insert_running_history", return_value=None)
-    mocker.patch("starrocks_bbr.backup.issue_backup_commands", side_effect=RuntimeError("boom"))
-    update_spy = mocker.patch("starrocks_bbr.backup.update_history_final")
+    mocker.patch("starrocks_br.backup.decide_backup_plan", return_value=BackupPlan("full", ["t"], {}))
+    mocker.patch("starrocks_br.backup.insert_running_history", return_value=None)
+    mocker.patch("starrocks_br.backup.issue_backup_commands", side_effect=RuntimeError("boom"))
+    update_spy = mocker.patch("starrocks_br.backup.update_history_final")
 
     with pytest.raises(RuntimeError):
         run_backup(fake_db, ["t"])
@@ -91,11 +91,11 @@ def test_should_mark_failed_when_issue_backup_raises(mocker, fake_db):
 
 
 def test_should_mark_failed_when_poll_raises(mocker, fake_db):
-    mocker.patch("starrocks_bbr.backup.decide_backup_plan", return_value=BackupPlan("full", ["t"], {}))
-    mocker.patch("starrocks_bbr.backup.insert_running_history", return_value=None)
-    mocker.patch("starrocks_bbr.backup.issue_backup_commands", return_value=None)
-    mocker.patch("starrocks_bbr.backup.poll_backup_until_done", side_effect=RuntimeError("poll failed"))
-    update_spy = mocker.patch("starrocks_bbr.backup.update_history_final")
+    mocker.patch("starrocks_br.backup.decide_backup_plan", return_value=BackupPlan("full", ["t"], {}))
+    mocker.patch("starrocks_br.backup.insert_running_history", return_value=None)
+    mocker.patch("starrocks_br.backup.issue_backup_commands", return_value=None)
+    mocker.patch("starrocks_br.backup.poll_backup_until_done", side_effect=RuntimeError("poll failed"))
+    update_spy = mocker.patch("starrocks_br.backup.update_history_final")
 
     with pytest.raises(RuntimeError):
         run_backup(fake_db, ["t"])

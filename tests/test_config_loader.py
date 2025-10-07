@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 import textwrap
 
-from starrocks_bbr.config import load_config, DatabaseConfig
+from starrocks_br.config import load_config, DatabaseConfig
 
 
 def write_yaml(tmp_path: Path, content: str) -> Path:

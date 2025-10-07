@@ -1,6 +1,6 @@
 from click.testing import CliRunner
 
-from starrocks_bbr.cli import cli, main
+from starrocks_br.cli import cli, main
 
 
 def test_should_print_help_and_exit_zero_when_no_args():
@@ -11,7 +11,7 @@ def test_should_print_help_and_exit_zero_when_no_args():
 def test_should_print_only_headers_when_history_is_empty(monkeypatch, mocker):
     """list command prints headers even when there are no rows (README §3.d)."""
     runner = CliRunner()
-    db_cls = mocker.patch("starrocks_bbr.cli.Database")
+    db_cls = mocker.patch("starrocks_br.cli.Database")
     db = db_cls.return_value
     db.query.return_value = []
 

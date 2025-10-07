@@ -1,52 +1,85 @@
-# Project: Python CLI for StarRocks Backups (`starrocks-bbr`) - MVP
+# StarRocks Backup and Restore (starrocks-br | MVP)
 
-## 1. Goal
-Develop a minimal, functional MVP of a Python CLI to automate the core backup and restore workflow for a StarRocks shared-nothing cluster. The focus is on implementing the essential logic correctly.
+Minimal Python CLI to orchestrate StarRocks backups and single-table point-in-time restores. The tool is stateless; all state lives in StarRocks metadata tables.
 
-## 2. Core Logic to Implement
-- **Backup Strategy:** The tool must distinguish between a `full` backup (the baseline "Master Copy") and an `incremental` backup.
-- **Incremental Definition:** An "incremental" backup must contain only the partitions that have changed since the **last successful backup of any type**.
-- **State Management:** All state must be tracked in a metadata table within StarRocks (e.g., `ops.backup_history`). The tool itself must be stateless.
+## Features
+- Init: creates metadata (`ops.backup_history`).
+- Backup:
+  - Decides full vs incremental based on last FINISHED backup.
+  - Incremental backs up only changed partitions since the last backup.
+  - Each snapshot also includes `ops.backup_history` (for disaster recovery bootstrap).
+  - Polls `SHOW BACKUP` until completion and records `FINISHED`/`FAILED` with `backup_timestamp`.
+  - On any error, marks the running record as `FAILED` (no stuck RUNNING).
+- List: prints backup history.
+- Restore:
+  - Validates the target table does not exist.
+  - Builds chain: latest full + incrementals strictly after that full, up to target timestamp.
+  - Restores full first, then partitions for incrementals, using the recorded timestamps.
 
-## 3. MVP Command Scope
+## Requirements
+- Python 3.9+
+- mysql-connector-python, PyYAML, click, pytest (+ pytest-cov for coverage)
 
-Implement the basic structure for the following commands:
+## Install
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
 
-#### a. `starrocks-bbr init`
-- **Function:** Creates the metadata table.
-- **Flags:** `--config <path>` (Required).
-- **Logic:** Connects to the database and runs a `CREATE TABLE IF NOT EXISTS ops.backup_history (...)` statement. The table must be able to store backup type, status, start/end times, snapshot label, and the official `backup_timestamp`.
+## Config
+```yaml
+host: localhost
+port: 9030
+user: root
+password: secret
+database: ops
+tables:
+  - db1.tableA
+  - db2.tableB
+```
 
-#### b. `starrocks-bbr backup`
-- **Function:** Runs the main backup workflow automatically.
-- **Flags:** `--config <path>` (Required).
-- **Logic:**
-    1.  Reads the DB config.
-    2.  Checks the metadata table for the last successful backup.
-    3.  If none exists, triggers a **full** backup of all tables listed in the config.
-    4.  If one exists, triggers an **incremental** backup by finding changed partitions since the last backup's timestamp.
-    5.  For both cases, it must:
-        - Insert a "RUNNING" record into the metadata table.
-        - Execute the appropriate `BACKUP SNAPSHOT` command.
-        - Poll `SHOW BACKUP` until the job is complete.
-        - Update the metadata record with the final status ("FINISHED" or "FAILED") and the `backup_timestamp`.
+## Usage
+```bash
+# Help
+python -m starrocks_br.cli --help
 
-#### c. `starrocks-bbr restore`
-- **Function:** Performs a basic point-in-time recovery of a single table.
-- **Flags:** `--config <path>`, `--table <name>`, `--timestamp "<YYYY-MM-DD HH:MM:SS>"` (All required).
-- **Logic:**
-    1.  Finds the correct restore chain (the last full backup + all subsequent incrementals before the target timestamp) from the metadata table.
-    2.  Identifies the latest version of each partition needed for the restore.
-    3.  Executes the `RESTORE` commands in the correct order (full first, then partitions), using the correct `backup_timestamp` for each.
-    4.  **MVP constraint:** If the target table already exists, the command should fail with an error message.
+# Create metadata
+python -m starrocks_br.cli init --config config.yaml
 
-#### d. `starrocks-bbr list`
-- **Function:** Shows a simple history of backups.
-- **Flags:** `--config <path>` (Required).
-- **Logic:** Queries the `ops.backup_history` table and prints the results to the console.
+# Run backup (auto full/incremental)
+python -m starrocks_br.cli backup --config config.yaml
 
-## 4. MVP Technical Requirements
-- **Language:** Python 3.9+
-- **Libraries:** Use `mysql-connector-python`, `PyYAML`, and `click`.
-- **Error Handling:** Implement basic error handling for critical failures (e.g., DB connection fails, SQL query fails).
-- **Logging:** Use the `logging` module to print informative status messages for each step.
+# List history
+python -m starrocks_br.cli list --config config.yaml
+
+# Restore one table at timestamp
+python -m starrocks_br.cli restore --config config.yaml --table db1.tableA --timestamp "2025-10-06 12:00:00"
+```
+
+## DR note (cold start)
+Because every snapshot includes `ops.backup_history`, you can restore it first on a new cluster, then use `restore` to rebuild tables using the recovered history.
+
+## Testing
+```bash
+pytest --cov=src/starrocks_br --cov-report=term-missing
+```
+Unit tests mock all DB interactions. Coverage emphasizes decision paths (backup/restore flows).
+
+## Security
+- Values (labels, timestamps) use parameterized queries.
+- Identifiers (table/partition names) cannot be parameterized in SQL; validate or whitelist if taking user input.
+
+## Roadmap / Checklist
+- [✅] CLI scaffold and friendly error handling (invalid options)
+- [✅] YAML config loader with validation
+- [✅] DB wrapper (mysql-connector) with unit tests (mocks)
+- [✅] init: create `ops.backup_history`
+- [✅] backup: full/incremental decision, polling, final status, includes metadata table
+- [✅] backup: mark FAILED on errors (no stuck RUNNING)
+- [✅] list: print history
+- [✅] restore: chain resolution (full + incrementals after full), ordered execution
+- [✅] High decision coverage with pytest/pytest-cov
+- [ ] Identifier validation (table/partition whitelist)
+- [ ] Optional single-connection context per command (`with Database(...) as db`)
+- [ ] Integration/E2E tests with a real StarRocks environment

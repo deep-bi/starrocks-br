@@ -4,13 +4,13 @@ import tempfile
 import pytest
 from click.testing import CliRunner
 
-from starrocks_bbr.cli import cli
+from starrocks_br.cli import cli
 from tests.utils import write_cfg
 
 
 @pytest.fixture()
 def db_mock(mocker):
-    db_cls = mocker.patch("starrocks_bbr.cli.Database")
+    db_cls = mocker.patch("starrocks_br.cli.Database")
     return db_cls.return_value
 
 

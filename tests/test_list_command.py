@@ -2,7 +2,7 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from starrocks_bbr.cli import cli
+from starrocks_br.cli import cli
 from .utils import write_cfg
 
 
@@ -10,7 +10,7 @@ def test_list_prints_history(tmp_path, mocker):
     cfg = write_cfg(tmp_path)
 
     # Mock DB used by CLI
-    db_cls = mocker.patch("starrocks_bbr.cli.Database")
+    db_cls = mocker.patch("starrocks_br.cli.Database")
     db = db_cls.return_value
     db.query.return_value = [
         (1, "full", "FINISHED", "2025-10-05 12:00:00", "2025-10-05 12:10:00", "snap1", "2025-10-05 12:10:00", "ops", None),
