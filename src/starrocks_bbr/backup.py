@@ -110,6 +110,10 @@ def run_backup(db: Database, tables: List[str]) -> None:
     plan = decide_backup_plan(db, tables)
     snapshot_label = f"bbr_{int(time.time())}"
     insert_running_history(db, plan, snapshot_label)
-    issue_backup_commands(db, plan)
-    status, ts = poll_backup_until_done(db)
-    update_history_final(db, status, ts)
+    try:
+        issue_backup_commands(db, plan)
+        status, ts = poll_backup_until_done(db)
+        update_history_final(db, status, ts)
+    except Exception:
+        update_history_final(db, "FAILED", None)
+        raise
