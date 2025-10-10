@@ -7,6 +7,7 @@ from starrocks_br.backup import (
     BackupPlan,
     decide_backup_plan,
     get_last_successful_backup,
+    get_changed_partitions_since,
     issue_backup_commands,
     poll_backup_until_done,
     update_history_final,
@@ -51,9 +52,8 @@ def test_should_choose_incremental_with_empty_tables_when_no_partitions_changed(
 def test_should_issue_incremental_without_partitions_clause_when_parts_empty(fake_db):
     """issue_backup_commands should not include a PARTITION list when empty; still includes metadata table."""
     plan = BackupPlan(backup_type="incremental", tables=["db1.t1"], partitions_by_table={"db1.t1": []})
-    issue_backup_commands(fake_db, plan)
-    # Expect ON (db1.t1, ops.backup_history)
-    assert any("BACKUP SNAPSHOT repo ON (db1.t1, ops.backup_history)" in sql for sql, _ in fake_db._exec_sql)
+    issue_backup_commands(fake_db, plan, "test_repo")
+    assert any("BACKUP DATABASE ops ON (db1.t1, ops.backup_history) TO test_repo" in sql for sql, _ in fake_db._exec_sql)
 
 
 def test_poll_backup_empty_then_finished(fake_db, mocker):
@@ -80,9 +80,8 @@ def test_should_mark_failed_when_issue_backup_raises(mocker, fake_db):
     update_spy = mocker.patch("starrocks_br.backup.update_history_final")
 
     with pytest.raises(RuntimeError):
-        run_backup(fake_db, ["t"])
+        run_backup(fake_db, ["t"], "test_repo")
 
-    # Ensure FAILED recorded to avoid stuck RUNNING
     update_spy.assert_called_once()
     args, _ = update_spy.call_args
     assert args[0] is fake_db
@@ -98,8 +97,24 @@ def test_should_mark_failed_when_poll_raises(mocker, fake_db):
     update_spy = mocker.patch("starrocks_br.backup.update_history_final")
 
     with pytest.raises(RuntimeError):
-        run_backup(fake_db, ["t"])
+        run_backup(fake_db, ["t"], "test_repo")
 
     update_spy.assert_called_once()
     args, _ = update_spy.call_args
     assert args[1] == "FAILED" and args[2] is None
+
+
+def test_should_detect_changed_partitions_from_information_schema(fake_db):
+    """get_changed_partitions_since queries information_schema.partitions for partition changes."""
+    fake_db._query_side_effect = [[("p1",), ("p2",), (None,)]]
+    
+    partitions = get_changed_partitions_since(fake_db, "test_table", "2025-10-05 12:00:00")
+    
+    assert partitions == ["p1", "p2"]
+    assert len(fake_db._queries) == 1
+    sql, params = fake_db._queries[0]
+    assert "information_schema.partitions" in sql
+    assert "TABLE_SCHEMA = DATABASE()" in sql
+    assert "TABLE_NAME = %s" in sql
+    assert "UPDATE_TIME > %s" in sql
+    assert params == ("test_table", "2025-10-05 12:00:00")

@@ -14,10 +14,11 @@ def default_config(tables: Optional[List[str]] = None) -> Dict[str, Any]:
         "password": "secret",
         "database": "ops",
         "tables": tables or [],
+        "repository": "test_repo",
     }
 
 
-essential_keys = {"host", "port", "user", "password", "database", "tables"}
+essential_keys = {"host", "port", "user", "password", "database", "tables", "repository"}
 
 
 def write_cfg(tmp_path: Path, tables: Optional[List[str]] = None, overrides: Optional[Dict[str, Any]] = None, filename: str = "config.yaml") -> Path:

@@ -30,10 +30,18 @@ def get_last_successful_backup(db: Database) -> Optional[str]:
 
 
 def get_changed_partitions_since(db: Database, table: str, since_ts: str) -> List[str]:
-    # Placeholder: in MVP, we assume a helper view exists or we query partition versions
-    # For unit tests, we mock db.query to return list of partitions
-    rows = db.query("SELECT partition_name FROM ops.changed_partitions WHERE table_name=%s AND last_modified > %s", (table, since_ts))
-    return [r[0] for r in rows]
+    """Query information_schema.partitions to find partitions modified since given timestamp.
+    
+    Note: UPDATE_TIME may be stale for external catalogs (e.g., Hive) and is subject to 
+    session time_zone. For real-time accuracy, refresh metadata or query 
+    information_schema.partitions_meta (or the source metastore) instead.
+    """
+    rows = db.query(
+        "SELECT PARTITION_NAME FROM information_schema.partitions "
+        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND UPDATE_TIME > %s",
+        (table, since_ts)
+    )
+    return [row[0] for row in rows if row[0] is not None]
 
 
 def decide_backup_plan(db: Database, tables: List[str]) -> BackupPlan:
@@ -55,20 +63,26 @@ def decide_backup_plan(db: Database, tables: List[str]) -> BackupPlan:
 
 
 def insert_running_history(db: Database, plan: BackupPlan, snapshot_label: str) -> None:
+    """Insert backup record with partitions_json for incremental backups."""
+    partitions_json = None
+    if plan.backup_type == "incremental" and plan.partitions_by_table:
+        partitions_data = {table: parts for table, parts in plan.partitions_by_table.items() if parts}
+        if partitions_data:
+            partitions_json = json.dumps(partitions_data)
+    
     db.execute(
-        "INSERT INTO ops.backup_history (backup_type, status, start_time, snapshot_label, database_name) "
-        "VALUES (%s, 'RUNNING', NOW(), %s, %s)",
-        (plan.backup_type, snapshot_label, "ops"),
+        "INSERT INTO ops.backup_history (backup_type, status, start_time, snapshot_label, database_name, partitions_json) "
+        "VALUES (%s, 'RUNNING', NOW(), %s, %s, %s)",
+        (plan.backup_type, snapshot_label, "ops", partitions_json),
     )
 
 
 def issue_backup_commands(db: Database, plan: BackupPlan, repository: str = "repo") -> None:
-    # Include metadata table in every snapshot ON list
+    """Issue StarRocks BACKUP commands with proper syntax."""
     if plan.backup_type == "full":
-        for table in plan.tables:
-            objects = f"{table}, ops.backup_history"
-            sql = f"BACKUP SNAPSHOT {repository} ON ({objects})"
-            db.execute(sql)
+        tables_list = ", ".join(plan.tables + ["ops.backup_history"])
+        sql = f"BACKUP DATABASE ops ON ({tables_list}) TO {repository}"
+        db.execute(sql)
     else:
         for table in plan.tables:
             partitions = plan.partitions_by_table.get(table) or []
@@ -77,12 +91,11 @@ def issue_backup_commands(db: Database, plan: BackupPlan, repository: str = "rep
                 objects = f"{table} PARTITION ({parts}), ops.backup_history"
             else:
                 objects = f"{table}, ops.backup_history"
-            sql = f"BACKUP SNAPSHOT {repository} ON ({objects})"
+            sql = f"BACKUP DATABASE ops ON ({objects}) TO {repository}"
             db.execute(sql)
 
 
 def poll_backup_until_done(db: Database) -> Tuple[str, Optional[str]]:
-    # Returns (status, backup_timestamp)
     while True:
         rows = db.query("SHOW BACKUP")
         if not rows:
@@ -106,12 +119,12 @@ def update_history_final(db: Database, status: str, backup_timestamp: Optional[s
         )
 
 
-def run_backup(db: Database, tables: List[str]) -> None:
+def run_backup(db: Database, tables: List[str], repository: str = "repo") -> None:
     plan = decide_backup_plan(db, tables)
     snapshot_label = f"bbr_{int(time.time())}"
     insert_running_history(db, plan, snapshot_label)
     try:
-        issue_backup_commands(db, plan)
+        issue_backup_commands(db, plan, repository)
         status, ts = poll_backup_until_done(db)
         update_history_final(db, status, ts)
     except Exception:

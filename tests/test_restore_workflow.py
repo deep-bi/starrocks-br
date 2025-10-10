@@ -49,12 +49,12 @@ def test_should_restore_full_then_incremental_partitions_in_order(db_mock):
         # 1) table exists check -> []
         # 2) find last full backup before target -> [("2025-10-05 12:00:00", "snap_full")]
         # 3) find incrementals before target -> [("2025-10-06 10:00:00", "snap_inc")]
-        # 4) partitions for incrementals -> [("p1",), ("p2",)]
+        # 4) partitions_json for snap_inc -> [('{"db1.t1": ["p1", "p2"]}',)]
         db_mock.query.side_effect = [
-            [],
-            [("2025-10-05 12:00:00", "snap_full")],
-            [("2025-10-06 10:00:00", "snap_inc")],
-            [("p1",), ("p2",)],
+            [],  # table exists check
+            [("2025-10-05 12:00:00", "snap_full")],  # find full backup
+            [("2025-10-06 10:00:00", "snap_inc")],  # find incrementals
+            [('{"db1.t1": ["p1", "p2"]}',)],  # partitions_json for snap_inc
         ]
 
         result = runner.invoke(
@@ -76,11 +76,11 @@ def test_should_restore_full_then_incremental_partitions_in_order(db_mock):
         executed_sqls = [call.args[0] for call in db_mock.execute.call_args_list]
         
         full_restore_idx = next(
-            (i for i, s in enumerate(executed_sqls) if "RESTORE TABLE db1.t1 FROM snap_full AT '2025-10-05 12:00:00'" in s),
+            (i for i, s in enumerate(executed_sqls) if 'RESTORE DATABASE ops FROM test_repo PROPERTIES ("backup_timestamp" = "2025-10-05 12:00:00")' in s),
             None
         )
         partition_restore_idx = next(
-            (i for i, s in enumerate(executed_sqls) if "RESTORE PARTITIONS (p1, p2) FOR TABLE db1.t1 FROM snap_inc AT '2025-10-06 10:00:00'" in s),
+            (i for i, s in enumerate(executed_sqls) if 'RESTORE DATABASE ops ON (db1.t1 PARTITION (p1, p2)) FROM test_repo PROPERTIES ("backup_timestamp" = "2025-10-06 10:00:00")' in s),
             None
         )
         
@@ -108,7 +108,7 @@ def test_should_exclude_incrementals_older_than_full_backup(db_mock):
                 ("2025-09-15 00:00:00", "snap_inc_A"),  # older than full_B -> exclude
                 ("2025-09-30 00:00:00", "snap_inc_B"),  # after full_B -> include
             ],
-            [("pB1",), ("pB2",)],  # partitions for inc_B
+            [('{"db1.t1": ["pB1", "pB2"]}',)],  # partitions_json for inc_B (inc_A filtered out)
         ]
 
         result = runner.invoke(
@@ -127,6 +127,6 @@ def test_should_exclude_incrementals_older_than_full_backup(db_mock):
         assert result.exit_code == 0
         executed_sqls = [call.args[0] for call in db_mock.execute.call_args_list]
         # Must include full_B and inc_B only; not inc_A
-        assert any("RESTORE TABLE db1.t1 FROM snap_full_B AT '2025-09-28 00:00:00'" in s for s in executed_sqls)
-        assert any("RESTORE PARTITIONS (pB1, pB2) FOR TABLE db1.t1 FROM snap_inc_B AT '2025-09-30 00:00:00'" in s for s in executed_sqls)
+        assert any('RESTORE DATABASE ops FROM test_repo PROPERTIES ("backup_timestamp" = "2025-09-28 00:00:00")' in s for s in executed_sqls)
+        assert any('RESTORE DATABASE ops ON (db1.t1 PARTITION (pB1, pB2)) FROM test_repo PROPERTIES ("backup_timestamp" = "2025-09-30 00:00:00")' in s for s in executed_sqls)
         assert not any("snap_inc_A" in s for s in executed_sqls)

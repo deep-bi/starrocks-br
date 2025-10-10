@@ -34,9 +34,8 @@ def test_should_run_full_backup_when_no_previous_successful_backup(tmp_path: Pat
     executed = [call.args[0] for call in db_mock.execute.call_args_list]
     # Insert RUNNING
     assert any("INSERT INTO ops.backup_history" in s and "RUNNING" in s for s in executed)
-    # BACKUP SNAPSHOT issued per table
-    assert any("BACKUP SNAPSHOT" in s and "db1.t1" in s for s in executed)
-    assert any("BACKUP SNAPSHOT" in s and "db2.t2" in s for s in executed)
+    # BACKUP DATABASE with proper syntax
+    assert any("BACKUP DATABASE ops ON (db1.t1, db2.t2, ops.backup_history) TO test_repo" in s for s in executed)
     # Update FINISHED with backup_timestamp
     assert any("UPDATE ops.backup_history" in s and "FINISHED" in s for s in executed)
 
@@ -59,5 +58,5 @@ def test_should_run_incremental_when_previous_backup_exists(tmp_path: Path, mock
     assert result.exit_code == 0
 
     executed = [call.args[0] for call in db_mock.execute.call_args_list]
-    # BACKUP SNAPSHOT with partition hint for incremental now uses PARTITION (...) in ON list
-    assert any("BACKUP SNAPSHOT" in s and "db1.t1 PARTITION (p1, p2)" in s for s in executed)
+    # BACKUP DATABASE with partition hint for incremental
+    assert any("BACKUP DATABASE ops ON (db1.t1 PARTITION (p1, p2), ops.backup_history) TO test_repo" in s for s in executed)

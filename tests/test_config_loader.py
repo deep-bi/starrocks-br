@@ -24,6 +24,7 @@ def test_load_config_success(tmp_path: Path):
         tables:
           - db1.tableA
           - db2.tableB
+        repository: my_repo
         """,
     )
 
@@ -32,6 +33,7 @@ def test_load_config_success(tmp_path: Path):
     assert cfg.host == "localhost"
     assert cfg.port == 9030
     assert cfg.tables == ["db1.tableA", "db2.tableB"]
+    assert cfg.repository == "my_repo"
 
 
 def test_load_config_missing_keys(tmp_path: Path):
@@ -44,6 +46,7 @@ def test_load_config_missing_keys(tmp_path: Path):
         password: secret
         # database missing
         tables: []
+        repository: my_repo
         """,
     )
 
@@ -63,6 +66,7 @@ def test_load_config_invalid_tables_type(tmp_path: Path):
         password: secret
         database: ops
         tables: wrong
+        repository: my_repo
         """,
     )
 

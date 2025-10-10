@@ -15,9 +15,10 @@ class DatabaseConfig:
     password: str
     database: str
     tables: List[str]
+    repository: str
 
 
-REQUIRED_KEYS = {"host", "port", "user", "password", "database", "tables"}
+REQUIRED_KEYS = {"host", "port", "user", "password", "database", "tables", "repository"}
 
 
 def load_config(config_path: str | Path) -> DatabaseConfig:
@@ -44,4 +45,5 @@ def load_config(config_path: str | Path) -> DatabaseConfig:
         password=str(raw["password"]),
         database=str(raw["database"]),
         tables=tables,
+        repository=str(raw["repository"]),
     )

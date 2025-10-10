@@ -45,11 +45,24 @@ def find_incrementals_before(db: Database, table_name: str, target_ts: str) -> L
 
 
 def get_partitions_for_incremental(db: Database, snapshot_label: str) -> List[str]:
+    """Retrieve partition list from partitions_json column in backup_history."""
     rows = db.query(
-        "SELECT partition_name FROM ops.incremental_partitions WHERE snapshot_label=%s ORDER BY partition_name",
+        "SELECT partitions_json FROM ops.backup_history WHERE snapshot_label=%s",
         (snapshot_label,),
     )
-    return [r[0] for r in rows]
+    if not rows or not rows[0][0]:
+        return []
+    
+    import json
+    try:
+        partitions_data = json.loads(rows[0][0])
+        # Flatten all partitions from all tables
+        all_partitions = []
+        for table_partitions in partitions_data.values():
+            all_partitions.extend(table_partitions)
+        return sorted(all_partitions)
+    except (json.JSONDecodeError, TypeError):
+        return []
 
 
 def build_restore_chain(db: Database, table_name: str, target_ts: str) -> List[RestoreStep]:
@@ -70,19 +83,22 @@ def build_restore_chain(db: Database, table_name: str, target_ts: str) -> List[R
     return steps
 
 
-def execute_restore(db: Database, table_name: str, steps: List[RestoreStep]) -> None:
+def execute_restore(db: Database, table_name: str, steps: List[RestoreStep], repository: str = "repo") -> None:
+    """Execute restore commands with StarRocks syntax including PROPERTIES."""
     for step in steps:
         if step.kind == "full":
-            sql = f"RESTORE TABLE {table_name} FROM {step.snapshot_label} AT '{step.backup_timestamp}'"
+            sql = f'RESTORE DATABASE ops FROM {repository} PROPERTIES ("backup_timestamp" = "{step.backup_timestamp}")'
             db.execute(sql)
         else:
-            parts = ", ".join(step.partitions or [])
-            sql = f"RESTORE PARTITIONS ({parts}) FOR TABLE {table_name} FROM {step.snapshot_label} AT '{step.backup_timestamp}'"
+            if not step.partitions:
+                continue
+            parts = ", ".join(step.partitions)
+            sql = f'RESTORE DATABASE ops ON ({table_name} PARTITION ({parts})) FROM {repository} PROPERTIES ("backup_timestamp" = "{step.backup_timestamp}")'
             db.execute(sql)
 
 
-def run_restore(db: Database, table_name: str, target_ts: str) -> None:
+def run_restore(db: Database, table_name: str, target_ts: str, repository: str = "repo") -> None:
     if table_exists(db, table_name):
         raise RuntimeError(f"Target table '{table_name}' already exists")
     steps = build_restore_chain(db, table_name, target_ts)
-    execute_restore(db, table_name, steps)
+    execute_restore(db, table_name, steps, repository)

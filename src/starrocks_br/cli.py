@@ -62,7 +62,7 @@ def backup(config_path: Path) -> None:
     """Run backup workflow automatically."""
     cfg = load_config(config_path)
     db = Database(host=cfg.host, port=cfg.port, user=cfg.user, password=cfg.password, database=cfg.database)
-    run_backup(db, cfg.tables)
+    run_backup(db, cfg.tables, cfg.repository)
     click.echo("backup: completed")
 
 
@@ -91,7 +91,7 @@ def restore(config_path: Path, table_name: str, timestamp_str: str) -> None:
     cfg = load_config(config_path)
     db = Database(host=cfg.host, port=cfg.port, user=cfg.user, password=cfg.password, database=cfg.database)
     try:
-        run_restore(db, table_name, timestamp_str)
+        run_restore(db, table_name, timestamp_str, cfg.repository)
     except RuntimeError as e:
         raise click.ClickException(str(e))
     click.echo(f"restore: completed for table={table_name} at ts={timestamp_str}")

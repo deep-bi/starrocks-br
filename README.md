@@ -6,15 +6,16 @@ Minimal Python CLI to orchestrate StarRocks backups and single-table point-in-ti
 - Init: creates metadata (`ops.backup_history`).
 - Backup:
   - Decides full vs incremental based on last FINISHED backup.
-  - Incremental backs up only changed partitions since the last backup.
+  - Incremental backs up only changed partitions since the last backup (via `information_schema.partitions`).
   - Each snapshot also includes `ops.backup_history` (for disaster recovery bootstrap).
   - Polls `SHOW BACKUP` until completion and records `FINISHED`/`FAILED` with `backup_timestamp`.
   - On any error, marks the running record as `FAILED` (no stuck RUNNING).
+  - Stores partition metadata in `partitions_json` column.
 - List: prints backup history.
 - Restore:
   - Validates the target table does not exist.
   - Builds chain: latest full + incrementals strictly after that full, up to target timestamp.
-  - Restores full first, then partitions for incrementals, using the recorded timestamps.
+  - Restores full first, then partitions for incrementals, using StarRocks `PROPERTIES` syntax.
 
 ## Requirements
 - Python 3.9+
@@ -37,6 +38,7 @@ database: ops
 tables:
   - db1.tableA
   - db2.tableB
+repository: my_backup_repo
 ```
 
 ## Usage
@@ -80,6 +82,10 @@ Unit tests mock all DB interactions. Coverage emphasizes decision paths (backup/
 - [✅] list: print history
 - [✅] restore: chain resolution (full + incrementals after full), ordered execution
 - [✅] High decision coverage with pytest/pytest-cov
+- [✅] Real partition detection via `information_schema.partitions`
+- [✅] Partition metadata storage in `partitions_json` column
+- [✅] StarRocks-compliant BACKUP/RESTORE SQL syntax with PROPERTIES
+- [✅] Repository configuration parameter
 - [ ] Identifier validation (table/partition whitelist)
 - [ ] Optional single-connection context per command (`with Database(...) as db`)
 - [ ] Integration/E2E tests with a real StarRocks environment
