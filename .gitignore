@@ -8,4 +8,5 @@ htmlcov/
 starrocks_br.egg-info/
 *.md
 !README.md
+!checklist.md
 config.yaml
