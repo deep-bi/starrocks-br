@@ -1,4 +1,4 @@
-def test_cluster_health_ok(mocker):
+def should_report_healthy_when_all_nodes_alive_and_ready(mocker):
     from starrocks_br import health
 
     db = mocker.Mock()
@@ -18,7 +18,7 @@ def test_cluster_health_ok(mocker):
     assert "healthy" in msg.lower()
 
 
-def test_cluster_health_fail_when_any_dead(mocker):
+def should_report_unhealthy_when_any_node_dead_or_not_ready(mocker):
     from starrocks_br import health
 
     db = mocker.Mock()

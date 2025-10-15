@@ -17,7 +17,7 @@ def make_repo_cfg(**overrides):
     return base
 
 
-def test_ensure_repository_creates_when_missing(mocker):
+def should_create_repository_when_missing(mocker):
     db = mocker.Mock()
     db.query.return_value = []
 
@@ -31,7 +31,7 @@ def test_ensure_repository_creates_when_missing(mocker):
     assert db.query.call_count >= 1
 
 
-def test_ensure_repository_noop_when_matching(mocker):
+def should_do_nothing_when_repository_matches(mocker):
     db = mocker.Mock()
     db.query.return_value = [
         ("br_repo", "s3", "s3://backups/starrocks", "endpoint=http://minio:9000;region=us-east-1"),
@@ -46,7 +46,7 @@ def test_ensure_repository_noop_when_matching(mocker):
     assert db.query.call_count >= 1
 
 
-def test_ensure_repository_mismatch_raises(mocker):
+def should_raise_when_repository_properties_mismatch(mocker):
     db = mocker.Mock()
     db.query.return_value = [
         ("br_repo", "s3", "s3://backups/starrocks", "endpoint=http://wrong:9000;region=us-east-1"),
@@ -59,7 +59,7 @@ def test_ensure_repository_mismatch_raises(mocker):
         ensure_repository(db, cfg)
 
 
-def test_ensure_repository_surfaces_create_error(mocker):
+def should_surface_error_when_create_repository_fails(mocker):
     db = mocker.Mock()
     db.query.return_value = []
     db.execute.side_effect = RuntimeError("create failed: auth error")
