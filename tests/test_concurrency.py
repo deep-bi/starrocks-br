@@ -1,0 +1,46 @@
+from starrocks_br import concurrency
+
+
+def test_should_reserve_job_slot_when_no_active_conflict(mocker):
+    db = mocker.Mock()
+    db.query.return_value = []
+
+    concurrency.reserve_job_slot(db, scope="backup", label="db_20251015_inc")
+
+    assert db.query.call_count == 1
+    assert "FROM ops.run_status" in db.query.call_args[0][0]
+    assert db.execute.call_count == 1
+    sql = db.execute.call_args[0][0]
+    assert "INSERT INTO ops.run_status" in sql or "UPSERT INTO ops.run_status" in sql
+    assert "ACTIVE" in sql
+
+
+def test_should_raise_when_active_conflict_exists(mocker):
+    db = mocker.Mock()
+    db.query.return_value = [("backup", "db_20251015_inc", "ACTIVE")]
+
+    try:
+        concurrency.reserve_job_slot(db, scope="backup", label="db_20251015_inc")
+        assert False, "expected conflict"
+    except RuntimeError as e:
+        assert "active job" in str(e).lower()
+    assert db.execute.call_count == 0
+
+
+def test_should_update_state_when_completing_job_slot(mocker):
+    db = mocker.Mock()
+
+    concurrency.complete_job_slot(db, scope="backup", label="db_20251015_inc", final_state="FINISHED")
+
+    assert db.execute.call_count == 1
+    sql = db.execute.call_args[0][0]
+    assert "UPDATE ops.run_status" in sql or "DELETE FROM ops.run_status" in sql
+    assert "FINISHED" in sql or "state='IDLE'" in sql
+
+
+def test_should_not_conflict_on_different_scope(mocker):
+    db = mocker.Mock()
+    db.query.return_value = [("restore", "some", "ACTIVE")]
+
+    concurrency.reserve_job_slot(db, scope="backup", label="L1")
+    assert db.execute.call_count == 1
