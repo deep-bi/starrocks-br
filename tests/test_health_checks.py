@@ -1,7 +1,7 @@
 import starrocks_br.health as health
 
 
-def should_report_healthy_when_all_nodes_alive_and_ready(mocker):
+def test_should_report_healthy_when_all_nodes_alive_and_ready(mocker):
 
     db = mocker.Mock()
     db.query.side_effect = [
@@ -20,7 +20,7 @@ def should_report_healthy_when_all_nodes_alive_and_ready(mocker):
     assert "healthy" in msg.lower()
 
 
-def should_report_unhealthy_when_any_node_dead_or_not_ready(mocker):
+def test_should_report_unhealthy_when_any_node_dead_or_not_ready(mocker):
 
     db = mocker.Mock()
     db.query.side_effect = [
@@ -39,7 +39,7 @@ def should_report_unhealthy_when_any_node_dead_or_not_ready(mocker):
     assert "dead" in msg.lower() or "decommission" in msg.lower()
 
 
-def should_report_unhealthy_when_be_not_ready(mocker):
+def test_should_report_unhealthy_when_be_not_ready(mocker):
     db = mocker.Mock()
     db.query.side_effect = [
         [("fe1", "ALIVE", "TRUE", "TRUE")],
