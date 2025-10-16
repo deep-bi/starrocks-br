@@ -37,7 +37,7 @@ This checklist is organized into key areas, from initial setup and strategy to a
 * `X` **For Monthly Baselines**: Generate a simple `BACKUP DATABASE ...` command for the entire database.
 * `X` Generate a unique, standardized snapshot label for each job (e.g., `dbvrmd1_20250914_inc`).
 * ` ` **Post-Backup Logic**:
-* ` ` Poll `SHOW BACKUP` until the job state is `FINISHED` or `FAILED`.
+* `X` Poll `SHOW BACKUP` until the job state is `FINISHED` or `FAILED`.
 * ` ` On completion, write the final status, byte count, and object count to the `ops.backup_history` table.
 * ` ` Clear the job's `ACTIVE` status from `ops.run_status`.
 * ` ` **Failure Handling**: The script must gracefully handle common errors:
