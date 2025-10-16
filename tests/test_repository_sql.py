@@ -2,72 +2,43 @@ from starrocks_br.repository import ensure_repository
 import pytest
 
 
-def make_repo_cfg(**overrides):
-    base = {
-        "name": "br_repo",
-        "type": "s3",
-        "endpoint": "http://minio:9000",
-        "region": "us-east-1",
-        "bucket": "backups",
-        "prefix": "/starrocks",
-        "access_key": "minioadmin",
-        "secret_key": "minioadmin",
-        "force_https": False,
-    }
-    base.update(overrides)
-    return base
-
-
-def test_should_create_repository_when_missing(mocker):
+def test_should_raise_when_repository_not_found(mocker):
+    """Test that ensure_repository raises an error when repository doesn't exist."""
     db = mocker.Mock()
     db.query.return_value = []
 
-    cfg = make_repo_cfg()
-    ensure_repository(db, cfg)
-
-    assert db.execute.call_count == 1
-    assert "CREATE REPOSITORY" in db.execute.call_args[0][0]
-    assert db.query.call_count >= 1
-
-
-def test_should_do_nothing_when_repository_matches(mocker):
-    db = mocker.Mock()
-    db.query.return_value = [
-        ("br_repo", "s3", "s3://backups/starrocks", "endpoint=http://minio:9000;region=us-east-1"),
-    ]
-
-    cfg = make_repo_cfg()
-    ensure_repository(db, cfg)
-
-    assert db.execute.call_count == 0
-    assert db.query.call_count >= 1
-
-
-def test_should_enforce_https_when_flag_enabled(mocker):
-    db = mocker.Mock()
-    cfg = make_repo_cfg(endpoint="http://minio:9000", force_https=True)
-    with pytest.raises(ValueError):
-        ensure_repository(db, cfg)
-
-
-def test_should_raise_when_repository_properties_mismatch(mocker):
-    db = mocker.Mock()
-    db.query.return_value = [
-        ("br_repo", "s3", "s3://backups/starrocks", "endpoint=http://wrong:9000;region=us-east-1"),
-    ]
-
-    cfg = make_repo_cfg(endpoint="http://minio:9000")
-    with pytest.raises(RuntimeError):
-        ensure_repository(db, cfg)
-
-
-def test_should_surface_error_when_create_repository_fails(mocker):
-    db = mocker.Mock()
-    db.query.return_value = []
-    db.execute.side_effect = RuntimeError("create failed: auth error")
-
-    cfg = make_repo_cfg()
     with pytest.raises(RuntimeError) as err:
-        ensure_repository(db, cfg)
+        ensure_repository(db, "missing_repo")
+    
+    assert "not found" in str(err.value).lower()
+    assert "missing_repo" in str(err.value)
+    assert db.query.call_count >= 1
 
-    assert "create failed" in str(err.value)
+
+def test_should_pass_when_repository_exists(mocker):
+    """Test that ensure_repository succeeds when repository exists without errors."""
+    db = mocker.Mock()
+    db.query.return_value = [
+        # | RepoId | RepoName | CreateTime | IsReadOnly | Location | Broker | ErrMsg |
+        ("34217", "minio_repo", "2025-10-16 19:00:05", "false", "s3://backups/starrocks/", "", "NULL")
+    ]
+
+    # Should not raise
+    ensure_repository(db, "minio_repo")
+    
+    assert db.query.call_count >= 1
+
+
+def test_should_raise_when_repository_has_errors(mocker):
+    """Test that ensure_repository raises an error when repository has error message."""
+    db = mocker.Mock()
+    db.query.return_value = [
+        # | RepoId | RepoName | CreateTime | IsReadOnly | Location | Broker | ErrMsg |
+        ("34217", "broken_repo", "2025-10-16 19:00:05", "false", "s3://backups/", "", "Connection failed: auth error")
+    ]
+
+    with pytest.raises(RuntimeError) as err:
+        ensure_repository(db, "broken_repo")
+    
+    assert "auth error" in str(err.value).lower()
+    assert "broken_repo" in str(err.value)

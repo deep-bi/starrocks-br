@@ -116,16 +116,7 @@ def backup_incremental(config, days):
             
             click.echo(f"✓ Cluster health: {message}")
             
-            repository.ensure_repository(database, {
-                'name': cfg['repository'],
-                'type': 's3',
-                'endpoint': cfg.get('endpoint', ''),
-                'bucket': cfg.get('bucket', ''),
-                'prefix': cfg.get('prefix', '/'),
-                'access_key': cfg.get('access_key', ''),
-                'secret_key': cfg.get('secret_key', ''),
-                'force_https': cfg.get('force_https', True)
-            })
+            repository.ensure_repository(database, cfg['repository'])
             
             click.echo(f"✓ Repository '{cfg['repository']}' verified")
             
@@ -213,16 +204,7 @@ def backup_weekly(config):
             
             click.echo(f"✓ Cluster health: {message}")
             
-            repository.ensure_repository(database, {
-                'name': cfg['repository'],
-                'type': 's3',
-                'endpoint': cfg.get('endpoint', ''),
-                'bucket': cfg.get('bucket', ''),
-                'prefix': cfg.get('prefix', '/'),
-                'access_key': cfg.get('access_key', ''),
-                'secret_key': cfg.get('secret_key', ''),
-                'force_https': cfg.get('force_https', True)
-            })
+            repository.ensure_repository(database, cfg['repository'])
             
             click.echo(f"✓ Repository '{cfg['repository']}' verified")
             
@@ -310,16 +292,7 @@ def backup_monthly(config):
             
             click.echo(f"✓ Cluster health: {message}")
             
-            repository.ensure_repository(database, {
-                'name': cfg['repository'],
-                'type': 's3',
-                'endpoint': cfg.get('endpoint', ''),
-                'bucket': cfg.get('bucket', ''),
-                'prefix': cfg.get('prefix', '/'),
-                'access_key': cfg.get('access_key', ''),
-                'secret_key': cfg.get('secret_key', ''),
-                'force_https': cfg.get('force_https', True)
-            })
+            repository.ensure_repository(database, cfg['repository'])
             
             click.echo(f"✓ Repository '{cfg['repository']}' verified")
             
