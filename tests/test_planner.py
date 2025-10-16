@@ -3,9 +3,10 @@ from starrocks_br import planner
 
 def test_should_find_partitions_updated_in_last_n_days(mocker):
     db = mocker.Mock()
-    db.query.return_value = [
-        ("sales_db", "fact_sales", "p20251015", "2025-10-15"),
-        ("sales_db", "fact_sales", "p20251014", "2025-10-14"),
+    db.query.side_effect = [
+        [("sales_db", "fact_sales"), ("orders_db", "fact_orders")],  # incremental eligible tables
+        [("sales_db", "fact_sales", "p20251015", "2025-10-15"),
+         ("sales_db", "fact_sales", "p20251014", "2025-10-14")],  # recent partitions
     ]
     
     partitions = planner.find_recent_partitions(db, days=7)
@@ -13,7 +14,7 @@ def test_should_find_partitions_updated_in_last_n_days(mocker):
     assert len(partitions) == 2
     assert {"database": "sales_db", "table": "fact_sales", "partition_name": "p20251015"} in partitions
     assert {"database": "sales_db", "table": "fact_sales", "partition_name": "p20251014"} in partitions
-    assert db.query.call_count == 1
+    assert db.query.call_count == 2
 
 
 def test_should_build_incremental_backup_command():
@@ -50,13 +51,17 @@ def test_should_handle_single_partition():
 
 def test_should_format_date_correctly_in_query(mocker):
     db = mocker.Mock()
-    db.query.return_value = []
+    db.query.side_effect = [
+        [("sales_db", "fact_sales")],  # incremental eligible tables
+        [],  # no recent partitions
+    ]
     
     planner.find_recent_partitions(db, days=3)
     
-    query = db.query.call_args[0][0]
-    assert "information_schema.partitions" in query
-    assert "WHERE" in query
+    # Check the second query (the partitions query)
+    partitions_query = db.query.call_args_list[1][0][0]
+    assert "information_schema.partitions" in partitions_query
+    assert "WHERE" in partitions_query
 
 
 def test_should_build_monthly_backup_command():
@@ -173,3 +178,83 @@ def test_should_handle_special_characters_in_weekly_label():
     command = planner.build_weekly_backup_command(tables, "repo", "weekly_2025-10-15_backup")
     
     assert "BACKUP SNAPSHOT weekly_2025-10-15_backup" in command
+
+
+def test_should_find_incremental_eligible_tables(mocker):
+    """Test finding tables eligible for incremental backup from table_inventory."""
+    db = mocker.Mock()
+    db.query.return_value = [
+        ("sales_db", "fact_sales"),
+        ("orders_db", "fact_orders"),
+    ]
+    
+    tables = planner.find_incremental_eligible_tables(db)
+    
+    assert len(tables) == 2
+    assert {"database": "sales_db", "table": "fact_sales"} in tables
+    assert {"database": "orders_db", "table": "fact_orders"} in tables
+    assert db.query.call_count == 1
+
+
+def test_should_query_correct_incremental_eligible_condition(mocker):
+    """Test that the query uses the correct incremental_eligible condition."""
+    db = mocker.Mock()
+    db.query.return_value = []
+    
+    planner.find_incremental_eligible_tables(db)
+    
+    query = db.query.call_args[0][0]
+    assert "ops.table_inventory" in query
+    assert "incremental_eligible = TRUE" in query
+    assert "ORDER BY database_name, table_name" in query
+
+
+def test_should_find_recent_partitions_with_incremental_filtering(mocker):
+    """Test finding recent partitions filtered by incremental_eligible tables."""
+    db = mocker.Mock()
+    db.query.side_effect = [
+        [("sales_db", "fact_sales"), ("orders_db", "fact_orders")],
+        [("sales_db", "fact_sales", "p20251015", "2025-10-15")],
+    ]
+    
+    partitions = planner.find_recent_partitions(db, days=7)
+    
+    assert len(partitions) == 1
+    assert {"database": "sales_db", "table": "fact_sales", "partition_name": "p20251015"} in partitions
+    assert db.query.call_count == 2
+
+
+def test_should_handle_no_recent_partitions_with_incremental_filtering(mocker):
+    """Test handling when no recent partitions exist for incremental eligible tables."""
+    db = mocker.Mock()
+    db.query.side_effect = [
+        [("sales_db", "fact_sales")],
+        [],
+    ]
+    
+    partitions = planner.find_recent_partitions(db, days=7)
+    
+    assert len(partitions) == 0
+    assert db.query.call_count == 2
+
+
+def test_should_handle_empty_incremental_eligible_tables(mocker):
+    """Test handling when no tables are incremental eligible."""
+    db = mocker.Mock()
+    db.query.return_value = []
+    
+    tables = planner.find_incremental_eligible_tables(db)
+    
+    assert len(tables) == 0
+    assert db.query.call_count == 1
+
+
+def test_should_return_empty_partitions_when_no_incremental_eligible_tables(mocker):
+    """Test that find_recent_partitions returns empty when no tables are incremental eligible."""
+    db = mocker.Mock()
+    db.query.return_value = []  # No incremental eligible tables
+    
+    partitions = planner.find_recent_partitions(db, days=7)
+    
+    assert len(partitions) == 0
+    assert db.query.call_count == 1

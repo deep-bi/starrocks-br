@@ -2,21 +2,60 @@ from datetime import datetime, timedelta
 from typing import List, Dict
 
 
+def find_incremental_eligible_tables(db) -> List[Dict[str, str]]:
+    """Find tables eligible for incremental backup from table_inventory.
+    
+    Returns list of dictionaries with keys: database, table.
+    """
+    query = """
+    SELECT database_name, table_name
+    FROM ops.table_inventory
+    WHERE incremental_eligible = TRUE
+    ORDER BY database_name, table_name
+    """
+    
+    rows = db.query(query)
+    
+    return [
+        {
+            "database": row[0],
+            "table": row[1]
+        }
+        for row in rows
+    ]
+
+
 def find_recent_partitions(db, days: int) -> List[Dict[str, str]]:
-    """Find partitions updated in the last N days.
+    """Find partitions updated in the last N days from incremental eligible tables only.
+    
+    Args:
+        db: Database connection
+        days: Number of days to look back
     
     Returns list of dictionaries with keys: database, table, partition_name.
     """
     threshold_date = datetime.now() - timedelta(days=days)
     threshold_str = threshold_date.strftime("%Y-%m-%d")
     
-    query = """
+    eligible_tables = find_incremental_eligible_tables(db)
+    
+    if not eligible_tables:
+        return []
+    
+    table_conditions = []
+    for table in eligible_tables:
+        table_conditions.append(f"(table_schema = '{table['database']}' AND table_name = '{table['table']}')")
+    
+    table_filter = " AND (" + " OR ".join(table_conditions) + ")"
+    
+    query = f"""
     SELECT table_schema, table_name, partition_name, update_time
     FROM information_schema.partitions 
     WHERE partition_name IS NOT NULL 
-    AND update_time >= '%s'
+    AND update_time >= '{threshold_str}'
+    {table_filter}
     ORDER BY update_time DESC
-    """ % threshold_str
+    """
     
     rows = db.query(query)
     
