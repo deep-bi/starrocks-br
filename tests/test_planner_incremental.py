@@ -57,3 +57,35 @@ def test_should_format_date_correctly_in_query(mocker):
     query = db.query.call_args[0][0]
     assert "information_schema.partitions" in query
     assert "WHERE" in query
+
+
+def test_should_build_monthly_backup_command():
+    command = planner.build_monthly_backup_command("sales_db", "my_repo", "sales_db_20251015_monthly")
+    
+    expected = """
+    BACKUP DATABASE sales_db SNAPSHOT sales_db_20251015_monthly
+    TO my_repo"""
+    assert command == expected
+
+
+def test_should_handle_different_database_names():
+    command1 = planner.build_monthly_backup_command("orders_db", "repo", "label1")
+    command2 = planner.build_monthly_backup_command("config_db", "repo", "label2")
+    
+    assert "BACKUP DATABASE orders_db SNAPSHOT label1" in command1
+    assert "BACKUP DATABASE config_db SNAPSHOT label2" in command2
+    assert "TO repo" in command1
+    assert "TO repo" in command2
+
+
+def test_should_handle_different_repositories():
+    command = planner.build_monthly_backup_command("db", "s3_repo", "label")
+    
+    assert "BACKUP DATABASE db SNAPSHOT label" in command
+    assert "TO s3_repo" in command
+
+
+def test_should_handle_special_characters_in_label():
+    command = planner.build_monthly_backup_command("test_db", "repo", "test_db_2025-10-15_monthly")
+    
+    assert "BACKUP DATABASE test_db SNAPSHOT test_db_2025-10-15_monthly" in command
