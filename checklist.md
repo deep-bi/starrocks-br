@@ -27,10 +27,10 @@ This checklist is organized into key areas, from initial setup and strategy to a
 
 * ` ` **Pre-Backup Checks**: Before initiating any backup, the script must perform these checks:
 * `X` Verify FE and BE cluster health is nominal.
-* ` ` Query `ops.run_status` to ensure no conflicting backup or restore job is active.
+* `X` Query `ops.run_status` to ensure no conflicting backup or restore job is active.
 * `X` Test repository connectivity and write permissions.
 * ` ` Check that the `/starrocks/data/snapshot` directory has more than 15% free disk space.
-* ` ` If all checks pass, mark the job as `ACTIVE` in `ops.run_status`.
+* `X` If all checks pass, mark the job as `ACTIVE` in `ops.run_status`.
 * ` ` **Backup Execution Logic**:
 * ` ` **For Daily Incrementals**: Dynamically query `information_schema.partitions` to find partitions updated in the last N days and build the `BACKUP ... PARTITION (...)` command .
 * ` ` **For Weekly Fulls**: Query the `table_inventory` to get the list of dimension and non-partitioned tables to include in the `BACKUP ... ON (TABLE ...)` command.
