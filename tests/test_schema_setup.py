@@ -87,3 +87,75 @@ def test_should_define_proper_table_structures():
     assert "scope" in run_status_schema
     assert "label" in run_status_schema
     assert "state" in run_status_schema
+
+
+def test_ensure_ops_schema_when_database_does_not_exist(mocker):
+    """Test ensure_ops_schema creates schema when ops database doesn't exist"""
+    db = mocker.Mock()
+    db.query.return_value = []
+    mock_init = mocker.patch('starrocks_br.schema.initialize_ops_schema')
+    
+    result = schema.ensure_ops_schema(db)
+    
+    assert result is True
+    mock_init.assert_called_once_with(db)
+    db.query.assert_called_once()
+
+
+def test_ensure_ops_schema_when_tables_are_missing(mocker):
+    """Test ensure_ops_schema reinitializes when some tables are missing"""
+    db = mocker.Mock()
+    db.query.side_effect = [
+        [("ops",)],
+        [("table1",), ("table2",)]
+    ]
+    mock_init = mocker.patch('starrocks_br.schema.initialize_ops_schema')
+    
+    result = schema.ensure_ops_schema(db)
+    
+    assert result is True
+    mock_init.assert_called_once_with(db)
+    assert db.query.call_count == 2
+
+
+def test_ensure_ops_schema_when_all_tables_exist(mocker):
+    """Test ensure_ops_schema returns False when everything exists"""
+    db = mocker.Mock()
+    db.query.side_effect = [
+        [("ops",)],
+        [("table1",), ("table2",), ("table3",), ("table4",)]
+    ]
+    mock_init = mocker.patch('starrocks_br.schema.initialize_ops_schema')
+    
+    result = schema.ensure_ops_schema(db)
+    
+    assert result is False
+    mock_init.assert_not_called()
+    assert db.query.call_count == 2
+
+
+def test_ensure_ops_schema_handles_exceptions_gracefully(mocker):
+    """Test ensure_ops_schema handles exceptions by attempting initialization"""
+    db = mocker.Mock()
+    db.query.side_effect = Exception("Database error")
+    mock_init = mocker.patch('starrocks_br.schema.initialize_ops_schema')
+    
+    result = schema.ensure_ops_schema(db)
+    
+    assert result is True
+    mock_init.assert_called_once_with(db)
+
+
+def test_ensure_ops_schema_when_tables_result_is_none(mocker):
+    """Test ensure_ops_schema handles None result from SHOW TABLES"""
+    db = mocker.Mock()
+    db.query.side_effect = [
+        [("ops",)],
+        None
+    ]
+    mock_init = mocker.patch('starrocks_br.schema.initialize_ops_schema')
+    
+    result = schema.ensure_ops_schema(db)
+    
+    assert result is True
+    mock_init.assert_called_once_with(db)

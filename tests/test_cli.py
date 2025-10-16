@@ -25,6 +25,7 @@ def test_should_run_incremental_backup_with_valid_config(mocker):
         mock_db.__enter__ = mocker.Mock(return_value=mock_db)
         mock_db.__exit__ = mocker.Mock(return_value=False)
         mocker.patch('starrocks_br.db.StarRocksDB', return_value=mock_db)
+        mocker.patch('starrocks_br.schema.ensure_ops_schema', return_value=False)
         mocker.patch('starrocks_br.health.check_cluster_health', return_value=(True, "Healthy"))
         mocker.patch('starrocks_br.repository.ensure_repository')
         mocker.patch('starrocks_br.concurrency.reserve_job_slot')
@@ -109,6 +110,7 @@ def test_should_run_weekly_backup_with_valid_config(mocker):
         mock_db.__enter__ = mocker.Mock(return_value=mock_db)
         mock_db.__exit__ = mocker.Mock(return_value=False)
         mocker.patch('starrocks_br.db.StarRocksDB', return_value=mock_db)
+        mocker.patch('starrocks_br.schema.ensure_ops_schema', return_value=False)
         mocker.patch('starrocks_br.health.check_cluster_health', return_value=(True, "Healthy"))
         mocker.patch('starrocks_br.repository.ensure_repository')
         mocker.patch('starrocks_br.concurrency.reserve_job_slot')
@@ -152,6 +154,7 @@ def test_should_run_monthly_backup_with_valid_config(mocker):
         mock_db.__enter__ = mocker.Mock(return_value=mock_db)
         mock_db.__exit__ = mocker.Mock(return_value=False)
         mocker.patch('starrocks_br.db.StarRocksDB', return_value=mock_db)
+        mocker.patch('starrocks_br.schema.ensure_ops_schema', return_value=False)
         mocker.patch('starrocks_br.health.check_cluster_health', return_value=(True, "Healthy"))
         mocker.patch('starrocks_br.repository.ensure_repository')
         mocker.patch('starrocks_br.concurrency.reserve_job_slot')
@@ -192,6 +195,7 @@ def test_should_run_restore_partition_with_valid_parameters(mocker):
         mock_db.__enter__ = mocker.Mock(return_value=mock_db)
         mock_db.__exit__ = mocker.Mock(return_value=False)
         mocker.patch('starrocks_br.db.StarRocksDB', return_value=mock_db)
+        mocker.patch('starrocks_br.schema.ensure_ops_schema', return_value=False)
         mocker.patch('starrocks_br.restore.build_partition_restore_command', return_value='RESTORE SNAPSHOT test_backup FROM test_repo')
         mocker.patch('starrocks_br.restore.execute_restore', return_value={
             'success': True,
@@ -257,6 +261,7 @@ def test_should_handle_backup_failure_gracefully(mocker):
         mock_db.__enter__ = mocker.Mock(return_value=mock_db)
         mock_db.__exit__ = mocker.Mock(return_value=False)
         mocker.patch('starrocks_br.db.StarRocksDB', return_value=mock_db)
+        mocker.patch('starrocks_br.schema.ensure_ops_schema', return_value=False)
         mocker.patch('starrocks_br.health.check_cluster_health', return_value=(True, "Healthy"))
         mocker.patch('starrocks_br.repository.ensure_repository')
         mocker.patch('starrocks_br.concurrency.reserve_job_slot')
@@ -300,6 +305,7 @@ def test_should_handle_job_slot_conflict(mocker):
         mock_db.__enter__ = mocker.Mock(return_value=mock_db)
         mock_db.__exit__ = mocker.Mock(return_value=False)
         mocker.patch('starrocks_br.db.StarRocksDB', return_value=mock_db)
+        mocker.patch('starrocks_br.schema.ensure_ops_schema', return_value=False)
         mocker.patch('starrocks_br.health.check_cluster_health', return_value=(True, "Healthy"))
         mocker.patch('starrocks_br.repository.ensure_repository')
         mocker.patch('starrocks_br.concurrency.reserve_job_slot', side_effect=RuntimeError("active job conflict for scope; retry later"))
@@ -349,6 +355,7 @@ def test_incremental_backup_with_no_partitions_warning(mocker):
         mock_db.__enter__ = mocker.Mock(return_value=mock_db)
         mock_db.__exit__ = mocker.Mock(return_value=False)
         mocker.patch('starrocks_br.db.StarRocksDB', return_value=mock_db)
+        mocker.patch('starrocks_br.schema.ensure_ops_schema', return_value=False)
         mocker.patch('starrocks_br.health.check_cluster_health', return_value=(True, "Healthy"))
         mocker.patch('starrocks_br.repository.ensure_repository')
         mocker.patch('starrocks_br.concurrency.reserve_job_slot')
@@ -386,6 +393,7 @@ def test_weekly_backup_with_no_tables_warning(mocker):
         mock_db.__enter__ = mocker.Mock(return_value=mock_db)
         mock_db.__exit__ = mocker.Mock(return_value=False)
         mocker.patch('starrocks_br.db.StarRocksDB', return_value=mock_db)
+        mocker.patch('starrocks_br.schema.ensure_ops_schema', return_value=False)
         mocker.patch('starrocks_br.health.check_cluster_health', return_value=(True, "Healthy"))
         mocker.patch('starrocks_br.repository.ensure_repository')
         mocker.patch('starrocks_br.concurrency.reserve_job_slot')
@@ -524,6 +532,87 @@ def test_cli_exception_handling_generic_exception(mocker):
         
         assert result.exit_code == 1
         assert 'Error: Unexpected error' in result.output
+        
+    finally:
+        os.unlink(config_path)
+
+
+def test_init_command_successfully_creates_schema(mocker):
+    """Test init command creates ops schema successfully"""
+    runner = CliRunner()
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        f.write("""
+        host: "127.0.0.1"
+        port: 9030
+        user: "root"
+        password: ""
+        database: "test_db"
+        repository: "test_repo"
+        """)
+        f.flush()
+        config_path = f.name
+    
+    try:
+        mock_db = mocker.Mock()
+        mock_db.__enter__ = mocker.Mock(return_value=mock_db)
+        mock_db.__exit__ = mocker.Mock(return_value=False)
+        mocker.patch('starrocks_br.db.StarRocksDB', return_value=mock_db)
+        mock_init = mocker.patch('starrocks_br.schema.initialize_ops_schema')
+        
+        result = runner.invoke(cli.init, ['--config', config_path])
+        
+        assert result.exit_code == 0
+        assert 'Schema initialized successfully!' in result.output
+        assert 'ops.table_inventory created' in result.output
+        assert 'ops.backup_history created' in result.output
+        assert 'ops.restore_history created' in result.output
+        assert 'ops.run_status created' in result.output
+        mock_init.assert_called_once()
+        
+    finally:
+        os.unlink(config_path)
+
+
+def test_init_command_fails_with_invalid_config():
+    """Test init command fails gracefully with invalid config"""
+    runner = CliRunner()
+    
+    result = runner.invoke(cli.init, ['--config', '/nonexistent/config.yaml'])
+    
+    assert result.exit_code == 1
+    assert 'Error: Config file not found' in result.output
+
+
+def test_init_command_shows_next_steps(mocker):
+    """Test init command shows helpful next steps"""
+    runner = CliRunner()
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        f.write("""
+        host: "127.0.0.1"
+        port: 9030
+        user: "root"
+        password: ""
+        database: "test_db"
+        repository: "test_repo"
+        """)
+        f.flush()
+        config_path = f.name
+    
+    try:
+        mock_db = mocker.Mock()
+        mock_db.__enter__ = mocker.Mock(return_value=mock_db)
+        mock_db.__exit__ = mocker.Mock(return_value=False)
+        mocker.patch('starrocks_br.db.StarRocksDB', return_value=mock_db)
+        mocker.patch('starrocks_br.schema.initialize_ops_schema')
+        
+        result = runner.invoke(cli.init, ['--config', config_path])
+        
+        assert result.exit_code == 0
+        assert 'Next steps:' in result.output
+        assert 'INSERT INTO ops.table_inventory' in result.output
+        assert 'starrocks-br backup incremental' in result.output
         
     finally:
         os.unlink(config_path)
