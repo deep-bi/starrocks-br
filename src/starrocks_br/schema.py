@@ -35,13 +35,10 @@ def get_backup_history_schema() -> str:
     """Get CREATE TABLE statement for backup_history."""
     return """
     CREATE TABLE IF NOT EXISTS ops.backup_history (
-        job_id VARCHAR(255) NOT NULL PRIMARY KEY,
-        label VARCHAR(255) NOT NULL,
+        label VARCHAR(255) NOT NULL PRIMARY KEY,
         backup_type VARCHAR(50) NOT NULL,
         status VARCHAR(50) NOT NULL,
         repository VARCHAR(255) NOT NULL,
-        bytes_backed_up BIGINT DEFAULT 0,
-        objects_count INT DEFAULT 0,
         started_at DATETIME NOT NULL,
         finished_at DATETIME,
         error_message TEXT,

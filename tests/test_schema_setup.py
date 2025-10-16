@@ -53,9 +53,8 @@ def test_should_define_proper_table_structures():
     assert "table_type" in table_inventory_schema
     assert "backup_eligible" in table_inventory_schema
     
-    assert "job_id" in backup_history_schema
+    assert "label" in backup_history_schema
     assert "status" in backup_history_schema
-    assert "bytes_backed_up" in backup_history_schema
     
     assert "job_id" in restore_history_schema
     assert "status" in restore_history_schema
