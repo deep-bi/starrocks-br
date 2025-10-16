@@ -14,17 +14,16 @@ def check_cluster_health(db) -> Tuple[bool, str]:
 
     any_dead = False
     for row in fe_rows:
-        status = str(row[1]).upper() if len(row) > 1 else "ALIVE"
-        ready = str(row[2]).upper() if len(row) > 2 else "TRUE"
-        if not is_alive(status) or not is_alive(ready):
+        fe_joined_cluster = str(row[9]).upper() if len(row) > 9 else "TRUE"
+        fe_is_alive = str(row[10]).upper() if len(row) > 10 else "TRUE"
+        if not is_alive(fe_joined_cluster) or not is_alive(fe_is_alive):
             any_dead = True
             break
 
     if not any_dead:
         for row in be_rows:
-            status = str(row[1]).upper() if len(row) > 1 else "ALIVE"
-            ready = str(row[2]).upper() if len(row) > 2 else "TRUE"
-            if not is_alive(status) or not is_alive(ready):
+            be_is_alive = str(row[8]).upper() if len(row) > 8 else "TRUE"
+            if not is_alive(be_is_alive):
                 any_dead = True
                 break
 
