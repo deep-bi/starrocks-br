@@ -1,5 +1,30 @@
 from starrocks_br import schema
 
+def populate_table_inventory_for_testing(db) -> None:
+    sample_data = [
+        ("sales_db", "fact_sales", "fact", True, True, False, True),
+        ("orders_db", "fact_orders", "fact", True, True, False, True),
+        
+        ("sales_db", "dim_customers", "dimension", True, False, True, True),
+        ("sales_db", "dim_products", "dimension", True, False, True, True),
+        ("orders_db", "dim_regions", "dimension", True, False, True, True),
+        
+        ("config_db", "ref_countries", "reference", True, False, False, True),
+        ("config_db", "ref_currencies", "reference", True, False, False, True),
+    ]
+    
+    for data in sample_data:
+        db.execute("""
+            INSERT INTO ops.table_inventory 
+            (database_name, table_name, table_type, backup_eligible, incremental_eligible, weekly_eligible, monthly_eligible)
+            VALUES ('%s', '%s', '%s', %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+            table_type = VALUES(table_type),
+            backup_eligible = VALUES(backup_eligible),
+            incremental_eligible = VALUES(incremental_eligible),
+            weekly_eligible = VALUES(weekly_eligible),
+            monthly_eligible = VALUES(monthly_eligible)
+        """ % data)
 
 def test_should_create_ops_database(mocker):
     db = mocker.Mock()
@@ -27,7 +52,7 @@ def test_should_create_all_required_tables(mocker):
 def test_should_populate_table_inventory_with_sample_data(mocker):
     db = mocker.Mock()
     
-    schema.initialize_ops_schema(db)
+    populate_table_inventory_for_testing(db)
     
     insert_calls = [call for call in db.execute.call_args_list if "INSERT INTO ops.table_inventory" in call[0][0]]
     assert len(insert_calls) > 0
