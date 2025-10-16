@@ -1,30 +1,33 @@
 def initialize_ops_schema(db) -> None:
-    """Initialize the ops database and all required control tables."""
+    """Initialize the ops database and all required control tables.
+    
+    Creates empty ops tables. Does NOT populate with sample data.
+    Users must manually insert their table inventory records.
+    """
     db.execute("CREATE DATABASE IF NOT EXISTS ops")
     
     db.execute(get_table_inventory_schema())
     db.execute(get_backup_history_schema())
     db.execute(get_restore_history_schema())
     db.execute(get_run_status_schema())
-    
-    _populate_table_inventory(db)
 
 
 def get_table_inventory_schema() -> str:
     """Get CREATE TABLE statement for table_inventory."""
     return """
     CREATE TABLE IF NOT EXISTS ops.table_inventory (
-        database_name VARCHAR(255) NOT NULL,
-        table_name VARCHAR(255) NOT NULL,
-        table_type VARCHAR(50) NOT NULL,
-        backup_eligible BOOLEAN DEFAULT TRUE,
-        incremental_eligible BOOLEAN DEFAULT FALSE,
-        weekly_eligible BOOLEAN DEFAULT FALSE,
-        monthly_eligible BOOLEAN DEFAULT TRUE,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (database_name, table_name)
+        database_name STRING NOT NULL COMMENT "Database name",
+        table_name STRING NOT NULL COMMENT "Table name",
+        table_type STRING NOT NULL COMMENT "Table type: fact, dimension, or reference",
+        backup_eligible BOOLEAN DEFAULT "true" COMMENT "Whether table should be backed up at all",
+        incremental_eligible BOOLEAN DEFAULT "false" COMMENT "Whether table is eligible for incremental (daily partition) backups",
+        weekly_eligible BOOLEAN DEFAULT "false" COMMENT "Whether table is eligible for weekly full backups",
+        monthly_eligible BOOLEAN DEFAULT "true" COMMENT "Whether table is eligible for monthly full backups",
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT "Record creation timestamp",
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT "Record last update timestamp"
     )
+    PRIMARY KEY (database_name, table_name)
+    COMMENT "Inventory of tables and their backup eligibility flags"
     """
 
 
@@ -32,15 +35,17 @@ def get_backup_history_schema() -> str:
     """Get CREATE TABLE statement for backup_history."""
     return """
     CREATE TABLE IF NOT EXISTS ops.backup_history (
-        label VARCHAR(255) NOT NULL PRIMARY KEY,
-        backup_type VARCHAR(50) NOT NULL,
-        status VARCHAR(50) NOT NULL,
-        repository VARCHAR(255) NOT NULL,
-        started_at DATETIME NOT NULL,
-        finished_at DATETIME,
-        error_message TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        label STRING NOT NULL COMMENT "Unique backup snapshot label",
+        backup_type STRING NOT NULL COMMENT "Type of backup: incremental, weekly, or monthly",
+        status STRING NOT NULL COMMENT "Final backup status: FINISHED, FAILED, CANCELLED, TIMEOUT",
+        repository STRING NOT NULL COMMENT "Repository name where backup was stored",
+        started_at DATETIME NOT NULL COMMENT "Backup start timestamp",
+        finished_at DATETIME COMMENT "Backup completion timestamp",
+        error_message STRING COMMENT "Error message if backup failed",
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT "History record creation timestamp"
     )
+    PRIMARY KEY (label)
+    COMMENT "History log of all backup operations"
     """
 
 
@@ -48,17 +53,19 @@ def get_restore_history_schema() -> str:
     """Get CREATE TABLE statement for restore_history."""
     return """
     CREATE TABLE IF NOT EXISTS ops.restore_history (
-        job_id VARCHAR(255) NOT NULL PRIMARY KEY,
-        backup_label VARCHAR(255) NOT NULL,
-        restore_type VARCHAR(50) NOT NULL,
-        status VARCHAR(50) NOT NULL,
-        repository VARCHAR(255) NOT NULL,
-        started_at DATETIME NOT NULL,
-        finished_at DATETIME,
-        error_message TEXT,
-        verification_checksum VARCHAR(255),
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        job_id STRING NOT NULL COMMENT "Unique restore job identifier",
+        backup_label STRING NOT NULL COMMENT "Source backup snapshot label",
+        restore_type STRING NOT NULL COMMENT "Type of restore: partition, table, or database",
+        status STRING NOT NULL COMMENT "Final restore status: FINISHED, FAILED, CANCELLED",
+        repository STRING NOT NULL COMMENT "Repository name where backup was retrieved from",
+        started_at DATETIME NOT NULL COMMENT "Restore start timestamp",
+        finished_at DATETIME COMMENT "Restore completion timestamp",
+        error_message STRING COMMENT "Error message if restore failed",
+        verification_checksum STRING COMMENT "Checksum for data verification",
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT "History record creation timestamp"
     )
+    PRIMARY KEY (job_id)
+    COMMENT "History log of all restore operations"
     """
 
 
@@ -66,39 +73,12 @@ def get_run_status_schema() -> str:
     """Get CREATE TABLE statement for run_status."""
     return """
     CREATE TABLE IF NOT EXISTS ops.run_status (
-        scope VARCHAR(50) NOT NULL,
-        label VARCHAR(255) NOT NULL,
-        state VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
-        started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        finished_at DATETIME,
-        PRIMARY KEY (scope, label)
+        scope STRING NOT NULL COMMENT "Job scope: backup or restore",
+        label STRING NOT NULL COMMENT "Job label or identifier",
+        state STRING NOT NULL DEFAULT "ACTIVE" COMMENT "Job state: ACTIVE or COMPLETED",
+        started_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT "Job start timestamp",
+        finished_at DATETIME COMMENT "Job completion timestamp"
     )
+    PRIMARY KEY (scope, label)
+    COMMENT "Tracks active and recently completed jobs for concurrency control"
     """
-
-
-def _populate_table_inventory(db) -> None:
-    """Populate table_inventory with sample data for common table types."""
-    sample_data = [
-        ("sales_db", "fact_sales", "fact", True, True, False, True),
-        ("orders_db", "fact_orders", "fact", True, True, False, True),
-        
-        ("sales_db", "dim_customers", "dimension", True, False, True, True),
-        ("sales_db", "dim_products", "dimension", True, False, True, True),
-        ("orders_db", "dim_regions", "dimension", True, False, True, True),
-        
-        ("config_db", "ref_countries", "reference", True, False, False, True),
-        ("config_db", "ref_currencies", "reference", True, False, False, True),
-    ]
-    
-    for data in sample_data:
-        db.execute("""
-            INSERT INTO ops.table_inventory 
-            (database_name, table_name, table_type, backup_eligible, incremental_eligible, weekly_eligible, monthly_eligible)
-            VALUES ('%s', '%s', '%s', %s, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE
-            table_type = VALUES(table_type),
-            backup_eligible = VALUES(backup_eligible),
-            incremental_eligible = VALUES(incremental_eligible),
-            weekly_eligible = VALUES(weekly_eligible),
-            monthly_eligible = VALUES(monthly_eligible)
-        """ % data)
