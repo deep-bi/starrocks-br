@@ -147,7 +147,8 @@ def backup_incremental(config, days):
                 backup_command,
                 repository=cfg['repository'],
                 backup_type='incremental',
-                scope='backup'
+                scope='backup',
+                database=cfg['database']
             )
             
             if result['success']:
@@ -235,7 +236,8 @@ def backup_weekly(config):
                 backup_command,
                 repository=cfg['repository'],
                 backup_type='weekly',
-                scope='backup'
+                scope='backup',
+                database=cfg['database']
             )
             
             if result['success']:
@@ -315,7 +317,8 @@ def backup_monthly(config):
                 backup_command,
                 repository=cfg['repository'],
                 backup_type='monthly',
-                scope='backup'
+                scope='backup',
+                database=cfg['database']
             )
             
             if result['success']:

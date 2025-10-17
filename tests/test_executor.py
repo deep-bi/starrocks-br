@@ -32,12 +32,12 @@ def test_should_handle_backup_command_execution_error(mocker):
 def test_should_poll_backup_status_until_finished(mocker):
     db = mocker.Mock()
     db.query.side_effect = [
-        [{"label": "test_backup", "state": "PENDING"}],
-        [{"label": "test_backup", "state": "RUNNING"}],
-        [{"label": "test_backup", "state": "FINISHED"}],
+        [("job1", "test_backup", "test_db", "PENDING")],
+        [("job1", "test_backup", "test_db", "SNAPSHOTING")],
+        [("job1", "test_backup", "test_db", "FINISHED")],
     ]
     
-    status = executor.poll_backup_status(db, "test_backup", max_polls=5, poll_interval=0.001)
+    status = executor.poll_backup_status(db, "test_backup", "test_db", max_polls=5, poll_interval=0.001)
     
     assert status["state"] == "FINISHED"
     assert db.query.call_count == 3
@@ -46,20 +46,20 @@ def test_should_poll_backup_status_until_finished(mocker):
 def test_should_poll_backup_status_until_failed(mocker):
     db = mocker.Mock()
     db.query.side_effect = [
-        [{"label": "test_backup", "state": "PENDING"}],
-        [{"label": "test_backup", "state": "FAILED"}],
+        [("job1", "test_backup", "test_db", "PENDING")],
+        [("job1", "test_backup", "test_db", "CANCELLED")],
     ]
     
-    status = executor.poll_backup_status(db, "test_backup", max_polls=5, poll_interval=0.001)
+    status = executor.poll_backup_status(db, "test_backup", "test_db", max_polls=5, poll_interval=0.001)
     
-    assert status["state"] == "FAILED"
+    assert status["state"] == "CANCELLED"
 
 
 def test_should_timeout_when_max_polls_reached(mocker):
     db = mocker.Mock()
-    db.query.return_value = [{"label": "test_backup", "state": "RUNNING"}]
+    db.query.return_value = [("job1", "test_backup", "test_db", "UPLOADING")]
     
-    status = executor.poll_backup_status(db, "test_backup", max_polls=2, poll_interval=0.001)
+    status = executor.poll_backup_status(db, "test_backup", "test_db", max_polls=2, poll_interval=0.001)
     
     assert status["state"] == "TIMEOUT"
     assert db.query.call_count == 2
@@ -67,29 +67,29 @@ def test_should_timeout_when_max_polls_reached(mocker):
 
 def test_should_query_correct_show_backup_syntax(mocker):
     db = mocker.Mock()
-    db.query.return_value = [{"label": "test_backup", "state": "FINISHED"}]
+    db.query.return_value = [("job1", "test_backup", "test_db", "FINISHED")]
     
-    executor.poll_backup_status(db, "test_backup", max_polls=1, poll_interval=0.001)
+    executor.poll_backup_status(db, "test_backup", "test_db", max_polls=1, poll_interval=0.001)
     
     query = db.query.call_args[0][0]
-    assert "SHOW BACKUP" in query
-    assert "test_backup" in query
+    assert "SHOW BACKUP FROM test_db" in query
 
 
 def test_should_handle_empty_backup_status_result(mocker):
     db = mocker.Mock()
     db.query.return_value = []
     
-    status = executor.poll_backup_status(db, "nonexistent_backup", max_polls=1, poll_interval=0.001)
+    status = executor.poll_backup_status(db, "nonexistent_backup", "test_db", max_polls=1, poll_interval=0.001)
     
-    assert status["state"] == "UNKNOWN"  # Empty results return UNKNOWN
+    assert status["state"] == "TIMEOUT"  # Empty results eventually timeout
 
 
-def test_should_handle_malformed_backup_status_result(mocker):
+def test_should_handle_dict_format_backup_status(mocker):
+    """Test handling StarRocks dict-format results."""
     db = mocker.Mock()
-    db.query.return_value = [{"label": "test_backup", "state": "FINISHED"}]
+    db.query.return_value = [{"JobId": "1", "SnapshotName": "test_backup", "DbName": "test_db", "State": "FINISHED"}]
     
-    status = executor.poll_backup_status(db, "test_backup", max_polls=1, poll_interval=0.001)
+    status = executor.poll_backup_status(db, "test_backup", "test_db", max_polls=1, poll_interval=0.001)
     
     assert status["state"] == "FINISHED"
 
@@ -98,11 +98,11 @@ def test_should_execute_full_backup_workflow(mocker):
     db = mocker.Mock()
     db.execute.return_value = None
     db.query.side_effect = [
-        [{"label": "test_backup", "state": "PENDING"}],
-        [{"label": "test_backup", "state": "FINISHED"}],
+        [("job1", "test_backup", "test_db", "PENDING")],
+        [("job1", "test_backup", "test_db", "FINISHED")],
     ]
     
-    backup_command = "BACKUP SNAPSHOT test_backup TO repo"
+    backup_command = "BACKUP DATABASE test_db SNAPSHOT test_backup TO repo"
     
     result = executor.execute_backup(db, backup_command, max_polls=5, poll_interval=0.001)
     
@@ -117,7 +117,7 @@ def test_should_handle_backup_execution_failure_in_workflow(mocker):
     db = mocker.Mock()
     db.execute.side_effect = Exception("Database connection failed")
     
-    backup_command = "BACKUP SNAPSHOT test_backup TO repo"
+    backup_command = "BACKUP DATABASE test_db SNAPSHOT test_backup TO repo"
     
     result = executor.execute_backup(db, backup_command, max_polls=5, poll_interval=0.001)
     
@@ -131,7 +131,7 @@ def test_should_handle_backup_polling_failure_in_workflow(mocker):
     db.execute.return_value = None
     db.query.side_effect = Exception("Query failed")
     
-    backup_command = "BACKUP SNAPSHOT test_backup TO repo"
+    backup_command = "BACKUP DATABASE test_db SNAPSHOT test_backup TO repo"
     
     result = executor.execute_backup(db, backup_command, max_polls=5, poll_interval=0.001)
     
@@ -140,18 +140,55 @@ def test_should_handle_backup_polling_failure_in_workflow(mocker):
     assert "Backup failed with state: ERROR" in result["error_message"]
 
 
+def test_should_handle_lost_backup_in_workflow(mocker):
+    """Test that execute_backup handles LOST state correctly (race condition detected)."""
+    db = mocker.Mock()
+    db.execute.return_value = None
+    db.query.side_effect = [
+        [("job1", "other_backup", "test_db", "FINISHED")],  # Wrong backup on first poll
+        [("job1", "other_backup", "test_db", "FINISHED")],  # Still wrong - LOST!
+    ]
+    
+    log_backup = mocker.patch("starrocks_br.history.log_backup")
+    complete_slot = mocker.patch("starrocks_br.concurrency.complete_job_slot")
+    
+    backup_command = "BACKUP DATABASE test_db SNAPSHOT test_backup TO repo"
+    
+    result = executor.execute_backup(
+        db,
+        backup_command,
+        max_polls=3,
+        poll_interval=0.001,
+        repository="repo",
+        backup_type="incremental",
+        scope="backup",
+    )
+    
+    assert result["success"] is False
+    assert result["final_status"]["state"] == "LOST"
+    assert "Backup failed with state: LOST" in result["error_message"]
+    
+    assert log_backup.call_count == 1
+    entry = log_backup.call_args[0][1]
+    assert entry["status"] == "LOST"
+    
+    complete_slot.assert_called_once()
+    _, kwargs = complete_slot.call_args
+    assert kwargs.get("final_state") == "LOST"
+
+
 def test_should_log_history_and_finalize_on_success(mocker):
     db = mocker.Mock()
     db.execute.return_value = None
     db.query.side_effect = [
-        [{"label": "test_backup", "state": "RUNNING"}],
-        [{"label": "test_backup", "state": "FINISHED"}],
+        [("job1", "test_backup", "test_db", "UPLOADING")],
+        [("job1", "test_backup", "test_db", "FINISHED")],
     ]
 
     log_backup = mocker.patch("starrocks_br.history.log_backup")
     complete_slot = mocker.patch("starrocks_br.concurrency.complete_job_slot")
 
-    backup_command = "BACKUP SNAPSHOT test_backup TO repo"
+    backup_command = "BACKUP DATABASE test_db SNAPSHOT test_backup TO repo"
 
     result = executor.execute_backup(
         db,
@@ -183,14 +220,14 @@ def test_should_log_history_and_finalize_on_failure(mocker):
     db = mocker.Mock()
     db.execute.return_value = None
     db.query.side_effect = [
-        [{"label": "test_backup", "state": "RUNNING"}],
-        [{"label": "test_backup", "state": "FAILED"}],
+        [("job1", "test_backup", "test_db", "UPLOADING")],
+        [("job1", "test_backup", "test_db", "CANCELLED")],
     ]
 
     log_backup = mocker.patch("starrocks_br.history.log_backup")
     complete_slot = mocker.patch("starrocks_br.concurrency.complete_job_slot")
 
-    backup_command = "BACKUP SNAPSHOT test_backup TO repo"
+    backup_command = "BACKUP DATABASE test_db SNAPSHOT test_backup TO repo"
 
     result = executor.execute_backup(
         db,
@@ -206,13 +243,13 @@ def test_should_log_history_and_finalize_on_failure(mocker):
     assert log_backup.call_count == 1
     entry = log_backup.call_args[0][1]
     assert entry["label"] == "test_backup"
-    assert entry["status"] == "FAILED"
+    assert entry["status"] == "CANCELLED"
     assert entry["repository"] == "repo"
     assert entry["backup_type"] == "incremental"
 
     complete_slot.assert_called_once()
     _, kwargs = complete_slot.call_args
-    assert kwargs.get("final_state") == "FAILED"
+    assert kwargs.get("final_state") == "CANCELLED"
 
 
 
@@ -235,42 +272,50 @@ def test_should_handle_backup_status_polling_with_empty_results():
     db = Mock()
     db.query.return_value = []
     
-    status = executor.poll_backup_status(db, "nonexistent_backup", max_polls=1, poll_interval=0.001)
+    status = executor.poll_backup_status(db, "nonexistent_backup", "test_db", max_polls=1, poll_interval=0.001)
     
-    assert status["state"] == "UNKNOWN"  # Empty results return UNKNOWN
+    assert status["state"] == "TIMEOUT"  # Empty results eventually timeout
     assert status["label"] == "nonexistent_backup"
 
 
-def test_should_handle_backup_status_polling_with_none_result():
-    """Test backup status polling when database returns None."""
+def test_should_detect_lost_backup_when_overwritten():
+    """Test that we detect when another backup overwrites ours (race condition)."""
     db = Mock()
-    db.query.return_value = None
+    # First poll: sees different backup (gives one chance)
+    # Second poll: still different backup - ours was overwritten!
+    db.query.side_effect = [
+        [("job1", "other_backup", "test_db", "FINISHED")],  # Wrong backup on first poll
+        [("job1", "other_backup", "test_db", "FINISHED")],  # Still wrong on second poll - LOST!
+    ]
     
-    status = executor.poll_backup_status(db, "test_backup", max_polls=1, poll_interval=0.001)
+    status = executor.poll_backup_status(db, "test_backup", "test_db", max_polls=5, poll_interval=0.001)
     
-    assert status["state"] == "UNKNOWN"  # None result becomes UNKNOWN
+    assert status["state"] == "LOST"
     assert status["label"] == "test_backup"
 
 
-def test_should_handle_backup_status_polling_with_malformed_dict():
-    """Test backup status polling with malformed dictionary results."""
+def test_should_recover_from_timing_issue_on_first_poll():
+    """Test that we give one chance if wrong backup appears on first poll only."""
     db = Mock()
-    db.query.return_value = [{"invalid": "data"}]  # Missing state field
+    db.query.side_effect = [
+        [("job1", "other_backup", "test_db", "UPLOADING")],
+        [("job2", "test_backup", "test_db", "FINISHED")],
+    ]
     
-    status = executor.poll_backup_status(db, "test_backup", max_polls=1, poll_interval=0.001)
+    status = executor.poll_backup_status(db, "test_backup", "test_db", max_polls=5, poll_interval=0.001)
     
-    assert status["state"] == "UNKNOWN"  # Missing state field becomes UNKNOWN
+    assert status["state"] == "FINISHED"
     assert status["label"] == "test_backup"
 
 
 def test_should_handle_backup_status_polling_with_malformed_tuple():
     """Test backup status polling with malformed tuple results."""
     db = Mock()
-    db.query.return_value = [("test_backup",)]  # Missing state field
+    db.query.return_value = [("job1",)]  # Missing required fields
     
-    status = executor.poll_backup_status(db, "test_backup", max_polls=1, poll_interval=0.001)
+    status = executor.poll_backup_status(db, "test_backup", "test_db", max_polls=1, poll_interval=0.001)
     
-    assert status["state"] == "UNKNOWN"  # Missing state field becomes UNKNOWN
+    assert status["state"] == "TIMEOUT"  # Malformed data eventually times out
     assert status["label"] == "test_backup"
 
 
@@ -279,8 +324,8 @@ def test_should_execute_backup_with_history_logging_exception():
     db = Mock()
     db.execute.return_value = None
     db.query.side_effect = [
-        [{"label": "test_backup", "state": "RUNNING"}],
-        [{"label": "test_backup", "state": "FINISHED"}],
+        [("job1", "test_backup", "test_db", "UPLOADING")],
+        [("job1", "test_backup", "test_db", "FINISHED")],
     ]
     
     log_backup = Mock(side_effect=Exception("Logging failed"))
@@ -290,7 +335,7 @@ def test_should_execute_backup_with_history_logging_exception():
         with patch("starrocks_br.executor.concurrency.complete_job_slot", complete_slot):
             result = executor.execute_backup(
                 db, 
-                "BACKUP SNAPSHOT test_backup TO repo",
+                "BACKUP DATABASE test_db SNAPSHOT test_backup TO repo",
                 max_polls=3,
                 poll_interval=0.001
             )
@@ -306,8 +351,8 @@ def test_should_execute_backup_with_job_slot_completion_exception():
     db = Mock()
     db.execute.return_value = None
     db.query.side_effect = [
-        [{"label": "test_backup", "state": "RUNNING"}],
-        [{"label": "test_backup", "state": "FINISHED"}],
+        [("job1", "test_backup", "test_db", "UPLOADING")],
+        [("job1", "test_backup", "test_db", "FINISHED")],
     ]
     
     log_backup = Mock()
@@ -317,7 +362,7 @@ def test_should_execute_backup_with_job_slot_completion_exception():
         with patch("starrocks_br.executor.concurrency.complete_job_slot", complete_slot):
             result = executor.execute_backup(
                 db, 
-                "BACKUP SNAPSHOT test_backup TO repo",
+                "BACKUP DATABASE test_db SNAPSHOT test_backup TO repo",
                 max_polls=3,
                 poll_interval=0.001
             )
@@ -351,6 +396,21 @@ def test_should_extract_label_from_both_backup_syntaxes():
     assert executor._extract_label_from_command(legacy_syntax_multiline) == "legacy_backup_20251015"
 
 
+def test_should_extract_database_from_backup_command():
+    """Test database extraction from backup commands."""
+    simple_command = "BACKUP DATABASE sales_db SNAPSHOT my_label TO repo"
+    assert executor._extract_database_from_command(simple_command) == "sales_db"
+    
+    multiline_command = """BACKUP DATABASE orders_db SNAPSHOT backup_20251016
+    TO my_repo
+    ON (TABLE fact_orders PARTITION (p20251015))"""
+    assert executor._extract_database_from_command(multiline_command) == "orders_db"
+    
+    # Legacy syntax should return unknown_database
+    legacy_command = "BACKUP SNAPSHOT my_backup TO repo"
+    assert executor._extract_database_from_command(legacy_command) == "unknown_database"
+
+
 def test_should_extract_label_from_command_with_extra_spaces():
     """Test label extraction from commands with extra spaces."""
     command_with_spaces = "BACKUP SNAPSHOT   my_backup_20251015   TO repo"
@@ -376,11 +436,11 @@ def test_should_handle_backup_execution_with_zero_poll_interval():
     """Test backup execution with zero poll interval."""
     db = Mock()
     db.execute.return_value = None
-    db.query.return_value = [{"label": "test_backup", "state": "FINISHED"}]
+    db.query.return_value = [("job1", "test_backup", "test_db", "FINISHED")]
     
     result = executor.execute_backup(
         db, 
-        "BACKUP SNAPSHOT test_backup TO repo",
+        "BACKUP DATABASE test_db SNAPSHOT test_backup TO repo",
         max_polls=1,
         poll_interval=0.0
     )
@@ -393,11 +453,11 @@ def test_should_handle_backup_execution_with_very_small_poll_interval():
     """Test backup execution with very small poll interval."""
     db = Mock()
     db.execute.return_value = None
-    db.query.return_value = [{"label": "test_backup", "state": "FINISHED"}]
+    db.query.return_value = [("job1", "test_backup", "test_db", "FINISHED")]
     
     result = executor.execute_backup(
         db, 
-        "BACKUP SNAPSHOT test_backup TO repo",
+        "BACKUP DATABASE test_db SNAPSHOT test_backup TO repo",
         max_polls=1,
         poll_interval=0.001
     )
@@ -410,11 +470,11 @@ def test_should_handle_backup_execution_with_large_max_polls():
     """Test backup execution with large max polls value."""
     db = Mock()
     db.execute.return_value = None
-    db.query.return_value = [{"label": "test_backup", "state": "FINISHED"}]
+    db.query.return_value = [("job1", "test_backup", "test_db", "FINISHED")]
     
     result = executor.execute_backup(
         db, 
-        "BACKUP SNAPSHOT test_backup TO repo",
+        "BACKUP DATABASE test_db SNAPSHOT test_backup TO repo",
         max_polls=100000,
         poll_interval=0.001
     )
@@ -430,7 +490,7 @@ def test_should_handle_backup_execution_with_negative_max_polls():
     
     result = executor.execute_backup(
         db, 
-        "BACKUP SNAPSHOT test_backup TO repo",
+        "BACKUP DATABASE test_db SNAPSHOT test_backup TO repo",
         max_polls=-1,
         poll_interval=0.001
     )
