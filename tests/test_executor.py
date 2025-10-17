@@ -509,3 +509,137 @@ def test_should_handle_backup_execution_with_negative_max_polls():
     assert result["success"] is False
     assert result["final_status"]["state"] == "TIMEOUT"
     assert db.query.call_count == 0
+
+
+def test_should_log_status_changes_during_polling(mocker, capsys):
+    """Test that polling logs status changes to stdout."""
+    db = mocker.Mock()
+    db.query.side_effect = [
+        [("job1", "test_backup", "test_db", "PENDING")],
+        [("job1", "test_backup", "test_db", "SNAPSHOTING")],
+        [("job1", "test_backup", "test_db", "UPLOADING")],
+        [("job1", "test_backup", "test_db", "FINISHED")],
+    ]
+    
+    status = executor.poll_backup_status(db, "test_backup", "test_db", max_polls=10, poll_interval=0.001)
+    
+    assert status["state"] == "FINISHED"
+    
+    captured = capsys.readouterr()
+    output = captured.out
+    
+    assert "PENDING" in output
+    assert "SNAPSHOTING" in output
+    assert "UPLOADING" in output
+    assert "FINISHED" in output
+    assert "poll" in output.lower()
+
+
+def test_should_log_progress_every_10_polls(mocker, capsys):
+    """Test that polling logs progress every 10 polls even without state change."""
+    db = mocker.Mock()
+    uploading_responses = [[("job1", "test_backup", "test_db", "UPLOADING")]] * 15
+    finished_response = [[("job1", "test_backup", "test_db", "FINISHED")]]
+    db.query.side_effect = uploading_responses + finished_response
+    
+    status = executor.poll_backup_status(db, "test_backup", "test_db", max_polls=20, poll_interval=0.001)
+    
+    assert status["state"] == "FINISHED"
+    
+    captured = capsys.readouterr()
+    output = captured.out
+    
+    assert "poll 1/" in output
+    assert "poll 10/" in output
+    assert "UPLOADING" in output
+
+
+def test_should_include_max_polls_in_status_logging(mocker, capsys):
+    """Test that status logs include max_polls information."""
+    db = mocker.Mock()
+    db.query.side_effect = [
+        [("job1", "test_backup", "test_db", "PENDING")],
+        [("job1", "test_backup", "test_db", "FINISHED")],
+    ]
+    
+    executor.poll_backup_status(db, "test_backup", "test_db", max_polls=100, poll_interval=0.001)
+    
+    captured = capsys.readouterr()
+    output = captured.out
+    
+    assert "/100)" in output
+
+
+def test_should_return_detailed_error_on_submit_failure(mocker):
+    """Test that submit_backup_command returns detailed error information."""
+    db = mocker.Mock()
+    db.execute.side_effect = RuntimeError("Connection timeout after 30 seconds")
+    
+    backup_command = "BACKUP DATABASE test_db SNAPSHOT test_backup TO repo"
+    
+    success, error = executor.submit_backup_command(db, backup_command)
+    
+    assert success is False
+    assert error is not None
+    assert "RuntimeError" in error
+    assert "Connection timeout after 30 seconds" in error
+    assert "Failed to submit backup command" in error
+
+
+def test_should_propagate_submit_error_to_execute_backup(mocker):
+    """Test that execute_backup includes detailed submit error in result."""
+    db = mocker.Mock()
+    db.execute.side_effect = ValueError("Invalid backup repository name")
+    
+    backup_command = "BACKUP DATABASE test_db SNAPSHOT test_backup TO invalid_repo"
+    
+    result = executor.execute_backup(db, backup_command, max_polls=5, poll_interval=0.001)
+    
+    assert result["success"] is False
+    assert result["final_status"] is None
+    assert "ValueError" in result["error_message"]
+    assert "Invalid backup repository name" in result["error_message"]
+
+
+def test_should_build_descriptive_error_message_for_lost_state():
+    """Test that _build_error_message creates helpful message for LOST state."""
+    final_status = {"state": "LOST"}
+    error_msg = executor._build_error_message(final_status, "my_backup", "sales_db")
+    
+    assert "Backup tracking lost" in error_msg
+    assert "my_backup" in error_msg
+    assert "sales_db" in error_msg
+    assert "concurrency issue" in error_msg
+    assert "ops.run_status" in error_msg
+
+
+def test_should_build_descriptive_error_message_for_cancelled_state():
+    """Test that _build_error_message creates helpful message for CANCELLED state."""
+    final_status = {"state": "CANCELLED"}
+    error_msg = executor._build_error_message(final_status, "my_backup", "sales_db")
+    
+    assert "cancelled by StarRocks" in error_msg
+    assert "my_backup" in error_msg
+    assert "Check StarRocks logs" in error_msg
+
+
+def test_should_build_descriptive_error_message_for_timeout_state():
+    """Test that _build_error_message creates helpful message for TIMEOUT state."""
+    final_status = {"state": "TIMEOUT"}
+    error_msg = executor._build_error_message(final_status, "my_backup", "sales_db")
+    
+    assert "timed out" in error_msg
+    assert "my_backup" in error_msg
+    assert "SHOW BACKUP FROM sales_db" in error_msg
+    assert "may still be running" in error_msg
+
+
+def test_should_build_descriptive_error_message_for_error_state():
+    """Test that _build_error_message creates helpful message for ERROR state."""
+    final_status = {"state": "ERROR"}
+    error_msg = executor._build_error_message(final_status, "my_backup", "sales_db")
+    
+    assert "Error occurred" in error_msg
+    assert "my_backup" in error_msg
+    assert "SHOW BACKUP FROM sales_db" in error_msg
+    assert "monitoring failed" in error_msg
