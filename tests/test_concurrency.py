@@ -23,7 +23,12 @@ def test_should_raise_when_active_conflict_exists(mocker):
         concurrency.reserve_job_slot(db, scope="backup", label="db_20251015_inc")
         assert False, "expected conflict"
     except RuntimeError as e:
-        assert "active job" in str(e).lower()
+        error_msg = str(e)
+        assert "Concurrency conflict" in error_msg
+        assert "Another 'backup' job is already ACTIVE: backup:db_20251015_inc" in error_msg
+        assert "Wait for it to complete or cancel it via" in error_msg
+        assert "UPDATE ops.run_status SET state='CANCELLED'" in error_msg
+        assert "WHERE label='db_20251015_inc' AND state='ACTIVE'" in error_msg
     assert db.execute.call_count == 0
 
 

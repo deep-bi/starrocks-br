@@ -8,7 +8,13 @@ def reserve_job_slot(db, scope: str, label: str) -> None:
     """
     rows = db.query("SELECT scope, label, state FROM ops.run_status WHERE state = 'ACTIVE'")
     if any(r[0] == scope for r in rows):
-        raise RuntimeError("active job conflict for scope; retry later")
+        active_jobs = [f"{r[0]}:{r[1]}" for r in rows if r[0] == scope]
+        active_labels = [r[1] for r in rows if r[0] == scope]
+        raise RuntimeError(
+            f"Concurrency conflict: Another '{scope}' job is already ACTIVE: {', '.join(active_jobs)}. "
+            f"Wait for it to complete or cancel it via: UPDATE ops.run_status SET state='CANCELLED' "
+            f"WHERE label='{active_labels[0]}' AND state='ACTIVE'"
+        )
 
     sql = (
         "INSERT INTO ops.run_status (scope, label, state, started_at) "
