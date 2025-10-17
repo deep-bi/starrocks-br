@@ -4,16 +4,19 @@ from . import history, concurrency
 
 MAX_POLLS = 21600 # 6 hours
 
-def submit_backup_command(db, backup_command: str) -> bool:
+def submit_backup_command(db, backup_command: str) -> tuple[bool, Optional[str]]:
     """Submit a backup command to StarRocks.
     
-    Returns True if successful, False if failed.
+    Returns (success, error_message).
     """
     try:
         db.execute(backup_command.strip())
-        return True
-    except Exception:
-        return False
+        return True, None
+    except Exception as e:
+        error_msg = f"Failed to submit backup command: {type(e).__name__}: {str(e)}"
+        print(f"error: {error_msg}")
+        print(f"backup_command: {backup_command}")
+        return False, error_msg
 
 
 def poll_backup_status(db, label: str, database: str, max_polls: int = MAX_POLLS, poll_interval: float = 1.0) -> Dict[str, str]:
@@ -106,11 +109,12 @@ def execute_backup(
     if not database:
         database = _extract_database_from_command(backup_command)
     
-    if not submit_backup_command(db, backup_command):
+    success, submit_error = submit_backup_command(db, backup_command)
+    if not success:
         return {
             "success": False,
             "final_status": None,
-            "error_message": "Failed to submit backup command"
+            "error_message": submit_error or "Failed to submit backup command (unknown error)"
         }
     
     try:
@@ -142,15 +146,50 @@ def execute_backup(
         return {
             "success": success,
             "final_status": final_status,
-            "error_message": None if success else f"Backup failed with state: {final_status['state']}"
+            "error_message": None if success else _build_error_message(final_status, label, database)
         }
         
     except Exception as e:
+        error_msg = f"Unexpected error during backup execution: {type(e).__name__}: {str(e)}"
+        print(f"error: {error_msg}")
         return {
             "success": False,
-            "final_status": None,
-            "error_message": str(e)
+            "final_status": {"state": "ERROR", "label": label},
+            "error_message": error_msg
         }
+
+
+def _build_error_message(final_status: Dict, label: str, database: str) -> str:
+    """Build a descriptive error message based on backup final status."""
+    state = final_status.get('state', 'UNKNOWN')
+    
+    if state == "LOST":
+        return (
+            f"Backup tracking lost for '{label}' in database '{database}'. "
+            f"Another backup operation overwrote the last backup status visible in SHOW BACKUP. "
+            f"This indicates a concurrency issue - only one backup per database should run at a time. "
+            f"Recommendation: Use ops.run_status concurrency control to prevent simultaneous backups, "
+            f"or verify if another tool/user is running backups on this database."
+        )
+    elif state == "CANCELLED":
+        return (
+            f"Backup '{label}' was cancelled by StarRocks. "
+            f"Check StarRocks logs for the reason (common causes: insufficient resources, storage issues, or manual cancellation)."
+        )
+    elif state == "TIMEOUT":
+        return (
+            f"Backup '{label}' monitoring timed out after {MAX_POLLS} polls. "
+            f"The backup may still be running in the background. "
+            f"Check SHOW BACKUP FROM {database} manually to see current status."
+        )
+    elif state == "ERROR":
+        return (
+            f"Error occurred while monitoring backup '{label}' status. "
+            f"The backup may have been submitted but monitoring failed. "
+            f"Check SHOW BACKUP FROM {database} and StarRocks logs for details."
+        )
+    else:
+        return f"Backup '{label}' failed with unexpected state: {state}"
 
 
 def _extract_label_from_command(backup_command: str) -> str:

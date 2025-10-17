@@ -11,9 +11,10 @@ def test_should_submit_backup_command_successfully(mocker):
     TO my_repo
     ON (TABLE sales_db.dim_customers)"""
     
-    result = executor.submit_backup_command(db, backup_command)
+    success, error = executor.submit_backup_command(db, backup_command)
     
-    assert result is True
+    assert success is True
+    assert error is None
     assert db.execute.call_count == 1
     assert db.execute.call_args[0][0] == backup_command.strip()
 
@@ -24,9 +25,13 @@ def test_should_handle_backup_command_execution_error(mocker):
     
     backup_command = "BACKUP SNAPSHOT test TO repo"
     
-    result = executor.submit_backup_command(db, backup_command)
+    success, error = executor.submit_backup_command(db, backup_command)
     
-    assert result is False
+    assert success is False
+    assert error is not None
+    assert "Failed to submit backup command" in error
+    assert "Exception" in error
+    assert "Database error" in error
 
 
 def test_should_poll_backup_status_until_finished(mocker):
@@ -124,6 +129,7 @@ def test_should_handle_backup_execution_failure_in_workflow(mocker):
     assert result["success"] is False
     assert result["final_status"] is None
     assert "Failed to submit backup command" in result["error_message"]
+    assert "Database connection failed" in result["error_message"]
 
 
 def test_should_handle_backup_polling_failure_in_workflow(mocker):
@@ -137,7 +143,8 @@ def test_should_handle_backup_polling_failure_in_workflow(mocker):
     
     assert result["success"] is False
     assert result["final_status"]["state"] == "ERROR" 
-    assert "Backup failed with state: ERROR" in result["error_message"]
+    assert "Error occurred while monitoring backup" in result["error_message"]
+    assert "test_backup" in result["error_message"]
 
 
 def test_should_handle_lost_backup_in_workflow(mocker):
@@ -166,7 +173,10 @@ def test_should_handle_lost_backup_in_workflow(mocker):
     
     assert result["success"] is False
     assert result["final_status"]["state"] == "LOST"
-    assert "Backup failed with state: LOST" in result["error_message"]
+    assert "Backup tracking lost" in result["error_message"]
+    assert "test_backup" in result["error_message"]
+    assert "test_db" in result["error_message"]
+    assert "concurrency issue" in result["error_message"]
     
     assert log_backup.call_count == 1
     entry = log_backup.call_args[0][1]
@@ -259,9 +269,10 @@ def test_should_handle_backup_command_execution_with_whitespace():
     db.execute.return_value = None
     
     command_with_whitespace = "   BACKUP SNAPSHOT test_backup TO repo   \n\n"
-    result = executor.submit_backup_command(db, command_with_whitespace)
+    success, error = executor.submit_backup_command(db, command_with_whitespace)
     
-    assert result is True
+    assert success is True
+    assert error is None
     assert db.execute.call_count == 1
     executed_command = db.execute.call_args[0][0]
     assert executed_command == "BACKUP SNAPSHOT test_backup TO repo"
