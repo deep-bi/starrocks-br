@@ -278,7 +278,7 @@ def test_incremental_backup_with_no_partitions_warning(config_file, mock_db, set
     result = runner.invoke(cli.backup_incremental, ['--config', config_file, '--group', 'daily_incremental'])
     
     assert result.exit_code == 1
-    assert 'Warning: No partitions found to backup' in result.output
+    assert 'No partitions found to backup' in result.output
 
 
 def test_full_backup_with_no_tables_warning(config_file, mock_db, setup_common_mocks, setup_password_env, mocker):
@@ -291,7 +291,7 @@ def test_full_backup_with_no_tables_warning(config_file, mock_db, setup_common_m
     result = runner.invoke(cli.backup_full, ['--config', config_file, '--group', 'empty_group'])
     
     assert result.exit_code == 1
-    assert 'Warning: No tables found in group' in result.output
+    assert 'No tables found in group' in result.output
 
 
 def test_restore_partition_invalid_table_format_error(config_file, setup_password_env):
@@ -363,17 +363,32 @@ def test_init_command_successfully_creates_schema(config_file, mock_db, setup_pa
     """Test init command creates ops schema successfully"""
     runner = CliRunner()
     
-    mock_init = mocker.patch('starrocks_br.schema.initialize_ops_schema')
+    def mock_initialize_ops_schema(db):
+        from starrocks_br import logger
+        logger.info("Creating ops database...")
+        logger.success("ops database created")
+        logger.info("Creating ops.table_inventory...")
+        logger.success("ops.table_inventory created")
+        logger.info("Creating ops.backup_history...")
+        logger.success("ops.backup_history created")
+        logger.info("Creating ops.restore_history...")
+        logger.success("ops.restore_history created")
+        logger.info("Creating ops.run_status...")
+        logger.success("ops.run_status created")
+        logger.info("")
+        logger.success("Schema initialized successfully!")
+    
+    mocker.patch('starrocks_br.schema.initialize_ops_schema', side_effect=mock_initialize_ops_schema)
     
     result = runner.invoke(cli.init, ['--config', config_file])
     
     assert result.exit_code == 0
     assert 'Schema initialized successfully!' in result.output
+    assert 'ops database created' in result.output
     assert 'ops.table_inventory created' in result.output
     assert 'ops.backup_history created' in result.output
     assert 'ops.restore_history created' in result.output
     assert 'ops.run_status created' in result.output
-    mock_init.assert_called_once()
 
 
 def test_init_command_fails_with_invalid_config():

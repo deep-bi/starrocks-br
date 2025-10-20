@@ -12,6 +12,7 @@ from . import labels
 from . import executor
 from . import restore
 from . import schema
+from . import logger
 
 
 @click.group()
@@ -46,36 +47,29 @@ def init(config):
         )
         
         with database:
-            click.echo("Initializing ops schema...")
+            logger.info("Initializing ops schema...")
             schema.initialize_ops_schema(database)
-            click.echo("✓ ops database created")
-            click.echo("✓ ops.table_inventory created")
-            click.echo("✓ ops.backup_history created")
-            click.echo("✓ ops.restore_history created")
-            click.echo("✓ ops.run_status created")
-            click.echo("")
-            click.echo("Schema initialized successfully!")
-            click.echo("")
-            click.echo("Next steps:")
-            click.echo("1. Insert your table inventory records:")
-            click.echo("   INSERT INTO ops.table_inventory")
-            click.echo("   (inventory_group, database_name, table_name)")
-            click.echo("   VALUES ('my_daily_incremental', 'your_db', 'your_fact_table');")
-            click.echo("   VALUES ('my_full_database_backup', 'your_db', '*');")
-            click.echo("   VALUES ('my_full_dimension_tables', 'your_db', 'dim_customers');")
-            click.echo("   VALUES ('my_full_dimension_tables', 'your_db', 'dim_products');")
-            click.echo("")
-            click.echo("2. Run your first backup:")
-            click.echo("   starrocks-br backup incremental --group my_daily_incremental --config config.yaml")
+            logger.info("")
+            logger.info("Next steps:")
+            logger.info("1. Insert your table inventory records:")
+            logger.info("   INSERT INTO ops.table_inventory")
+            logger.info("   (inventory_group, database_name, table_name)")
+            logger.info("   VALUES ('my_daily_incremental', 'your_db', 'your_fact_table');")
+            logger.info("   VALUES ('my_full_database_backup', 'your_db', '*');")
+            logger.info("   VALUES ('my_full_dimension_tables', 'your_db', 'dim_customers');")
+            logger.info("   VALUES ('my_full_dimension_tables', 'your_db', 'dim_products');")
+            logger.info("")
+            logger.info("2. Run your first backup:")
+            logger.info("   starrocks-br backup incremental --group my_daily_incremental --config config.yaml")
             
     except FileNotFoundError as e:
-        click.echo(f"Error: Config file not found: {e}", err=True)
+        logger.error(f"Config file not found: {e}")
         sys.exit(1)
     except ValueError as e:
-        click.echo(f"Error: Configuration error: {e}", err=True)
+        logger.error(f"Configuration error: {e}")
         sys.exit(1)
     except Exception as e:
-        click.echo(f"Error: Failed to initialize schema: {e}", err=True)
+        logger.error(f"Failed to initialize schema: {e}")
         sys.exit(1)
 
 
@@ -114,20 +108,20 @@ def backup_incremental(config, baseline_backup, group, name):
         with database:
             was_created = schema.ensure_ops_schema(database)
             if was_created:
-                click.echo("⚠ ops schema was auto-created. Please run 'starrocks-br init' after populating config.", err=True)
-                click.echo("⚠ Remember to populate ops.table_inventory with your backup groups!", err=True)
+                logger.warning("ops schema was auto-created. Please run 'starrocks-br init' after populating config.")
+                logger.warning("Remember to populate ops.table_inventory with your backup groups!")
                 sys.exit(1) # Exit if schema was just created, requires user action
             
             healthy, message = health.check_cluster_health(database)
             if not healthy:
-                click.echo(f"Error: Cluster health check failed: {message}", err=True)
+                logger.error(f"Cluster health check failed: {message}")
                 sys.exit(1)
             
-            click.echo(f"✓ Cluster health: {message}")
+            logger.success(f"Cluster health: {message}")
             
             repository.ensure_repository(database, cfg['repository'])
             
-            click.echo(f"✓ Repository '{cfg['repository']}' verified")
+            logger.success(f"Repository '{cfg['repository']}' verified")
             
             label = labels.determine_backup_label(
                 db=database,
@@ -136,26 +130,26 @@ def backup_incremental(config, baseline_backup, group, name):
                 custom_name=name
             )
             
-            click.echo(f"✓ Generated label: {label}")
+            logger.success(f"Generated label: {label}")
             
             if baseline_backup:
-                click.echo(f"✓ Using specified baseline backup: {baseline_backup}")
+                logger.success(f"Using specified baseline backup: {baseline_backup}")
             else:
                 latest_backup = planner.find_latest_full_backup(database, cfg['database'])
                 if latest_backup:
-                    click.echo(f"✓ Using latest full backup as baseline: {latest_backup['label']} ({latest_backup['backup_type']})")
+                    logger.success(f"Using latest full backup as baseline: {latest_backup['label']} ({latest_backup['backup_type']})")
                 else:
-                    click.echo("⚠ No full backup found - this will be the first incremental backup")
+                    logger.warning("No full backup found - this will be the first incremental backup")
             
             partitions = planner.find_recent_partitions(
                 database, cfg['database'], baseline_backup_label=baseline_backup, group_name=group
             )
             
             if not partitions:
-                click.echo("Warning: No partitions found to backup", err=True)
+                logger.warning("No partitions found to backup")
                 sys.exit(1)
             
-            click.echo(f"✓ Found {len(partitions)} partition(s) to backup")
+            logger.success(f"Found {len(partitions)} partition(s) to backup")
             
             backup_command = planner.build_incremental_backup_command(
                 partitions, cfg['repository'], label, cfg['database']
@@ -163,8 +157,8 @@ def backup_incremental(config, baseline_backup, group, name):
             
             concurrency.reserve_job_slot(database, scope='backup', label=label)
             
-            click.echo(f"✓ Job slot reserved")
-            click.echo(f"Starting incremental backup for group '{group}'...")
+            logger.success(f"Job slot reserved")
+            logger.info(f"Starting incremental backup for group '{group}'...")
             result = executor.execute_backup(
                 database,
                 backup_command,
@@ -175,28 +169,28 @@ def backup_incremental(config, baseline_backup, group, name):
             )
             
             if result['success']:
-                click.echo(f"✓ Backup completed successfully: {result['final_status']['state']}")
+                logger.success(f"Backup completed successfully: {result['final_status']['state']}")
                 sys.exit(0)
             else:
                 state = result.get('final_status', {}).get('state', 'UNKNOWN')
                 if state == "LOST":
-                    click.echo("❌ CRITICAL: Backup tracking lost!", err=True)
-                    click.echo("⚠️  Another backup operation started during ours.", err=True)
-                    click.echo("💡 Enable ops.run_status concurrency checks to prevent this.", err=True)
-                click.echo(f"Error: {result['error_message']}", err=True)
+                    logger.critical("Backup tracking lost!")
+                    logger.warning("Another backup operation started during ours.")
+                    logger.tip("Enable ops.run_status concurrency checks to prevent this.")
+                logger.error(f"{result['error_message']}")
                 sys.exit(1)
                 
     except FileNotFoundError as e:
-        click.echo(f"Error: Config file not found: {e}", err=True)
+        logger.error(f"Config file not found: {e}")
         sys.exit(1)
     except ValueError as e:
-        click.echo(f"Error: Configuration error: {e}", err=True)
+        logger.error(f"Configuration error: {e}")
         sys.exit(1)
     except RuntimeError as e:
-        click.echo(f"Error: {e}", err=True)
+        logger.error(f"{e}")
         sys.exit(1)
     except Exception as e:
-        click.echo(f"Error: Unexpected error: {e}", err=True)
+        logger.error(f"Unexpected error: {e}")
         sys.exit(1)
 
 
@@ -225,20 +219,20 @@ def backup_full(config, group, name):
         with database:
             was_created = schema.ensure_ops_schema(database)
             if was_created:
-                click.echo("⚠ ops schema was auto-created. Please run 'starrocks-br init' after populating config.", err=True)
-                click.echo("⚠ Remember to populate ops.table_inventory with your backup groups!", err=True)
+                logger.warning("ops schema was auto-created. Please run 'starrocks-br init' after populating config.")
+                logger.warning("Remember to populate ops.table_inventory with your backup groups!")
                 sys.exit(1) # Exit if schema was just created, requires user action
             
             healthy, message = health.check_cluster_health(database)
             if not healthy:
-                click.echo(f"Error: Cluster health check failed: {message}", err=True)
+                logger.error(f"Cluster health check failed: {message}")
                 sys.exit(1)
             
-            click.echo(f"✓ Cluster health: {message}")
+            logger.success(f"Cluster health: {message}")
             
             repository.ensure_repository(database, cfg['repository'])
             
-            click.echo(f"✓ Repository '{cfg['repository']}' verified")
+            logger.success(f"Repository '{cfg['repository']}' verified")
             
             label = labels.determine_backup_label(
                 db=database,
@@ -247,20 +241,20 @@ def backup_full(config, group, name):
                 custom_name=name
             )
             
-            click.echo(f"✓ Generated label: {label}")
+            logger.success(f"Generated label: {label}")
             
             backup_command = planner.build_full_backup_command(
                 database, group, cfg['repository'], label, cfg['database']
             )
             
             if not backup_command:
-                click.echo(f"Warning: No tables found in group '{group}' for database '{cfg['database']}' to backup", err=True)
+                logger.warning(f"No tables found in group '{group}' for database '{cfg['database']}' to backup")
                 sys.exit(1)
             
             concurrency.reserve_job_slot(database, scope='backup', label=label)
             
-            click.echo(f"✓ Job slot reserved")
-            click.echo(f"Starting full backup for group '{group}'...")
+            logger.success(f"Job slot reserved")
+            logger.info(f"Starting full backup for group '{group}'...")
             result = executor.execute_backup(
                 database,
                 backup_command,
@@ -271,26 +265,26 @@ def backup_full(config, group, name):
             )
             
             if result['success']:
-                click.echo(f"✓ Backup completed successfully: {result['final_status']['state']}")
+                logger.success(f"Backup completed successfully: {result['final_status']['state']}")
                 sys.exit(0)
             else:
                 state = result.get('final_status', {}).get('state', 'UNKNOWN')
                 if state == "LOST":
-                    click.echo("❌ CRITICAL: Backup tracking lost!", err=True)
-                    click.echo("⚠️  Another backup operation started during ours.", err=True)
-                    click.echo("💡 Enable ops.run_status concurrency checks to prevent this.", err=True)
-                click.echo(f"Error: {result['error_message']}", err=True)
+                    logger.critical("Backup tracking lost!")
+                    logger.warning("Another backup operation started during ours.")
+                    logger.tip("Enable ops.run_status concurrency checks to prevent this.")
+                logger.error(f"{result['error_message']}")
                 sys.exit(1)
                 
     except (FileNotFoundError, ValueError, RuntimeError, Exception) as e:
         if isinstance(e, FileNotFoundError):
-            click.echo(f"Error: Config file not found: {e}", err=True)
+            logger.error(f"Config file not found: {e}")
         elif isinstance(e, ValueError):
-            click.echo(f"Error: Configuration error: {e}", err=True)
+            logger.error(f"Configuration error: {e}")
         elif isinstance(e, RuntimeError):
-            click.echo(f"Error: {e}", err=True)
+            logger.error(f"{e}")
         else:
-            click.echo(f"Error: Unexpected error: {e}", err=True)
+            logger.error(f"Unexpected error: {e}")
         sys.exit(1)
 
 
@@ -311,7 +305,7 @@ def restore_partition(config, backup_label, table, partition):
         config_module.validate_config(cfg)
         
         if '.' not in table:
-            click.echo(f"Error: Table must be in format database.table", err=True)
+            logger.error(f"Table must be in format database.table")
             sys.exit(1)
         
         database_name, table_name = table.split('.', 1)
@@ -327,11 +321,11 @@ def restore_partition(config, backup_label, table, partition):
         with database:
             was_created = schema.ensure_ops_schema(database)
             if was_created:
-                click.echo("⚠ ops schema was auto-created. Please run 'starrocks-br init' after populating config.", err=True)
-                click.echo("⚠ Remember to populate ops.table_inventory with your backup groups!", err=True)
+                logger.warning("ops schema was auto-created. Please run 'starrocks-br init' after populating config.")
+                logger.warning("Remember to populate ops.table_inventory with your backup groups!")
                 sys.exit(1) # Exit if schema was just created, requires user action
             
-            click.echo(f"Restoring partition {partition} of {table} from backup {backup_label}...")
+            logger.info(f"Restoring partition {partition} of {table} from backup {backup_label}...")
             
             restore_command = restore.build_partition_restore_command(
                 database=database_name,
@@ -351,20 +345,20 @@ def restore_partition(config, backup_label, table, partition):
             )
             
             if result['success']:
-                click.echo(f"✓ Restore completed successfully: {result['final_status']['state']}")
+                logger.success(f"Restore completed successfully: {result['final_status']['state']}")
                 sys.exit(0)
             else:
-                click.echo(f"Error: Restore failed: {result['error_message']}", err=True)
+                logger.error(f"Restore failed: {result['error_message']}")
                 sys.exit(1)
                 
     except FileNotFoundError as e:
-        click.echo(f"Error: Config file not found: {e}", err=True)
+        logger.error(f"Config file not found: {e}")
         sys.exit(1)
     except ValueError as e:
-        click.echo(f"Error: Configuration error: {e}", err=True)
+        logger.error(f"Configuration error: {e}")
         sys.exit(1)
     except Exception as e:
-        click.echo(f"Error: Unexpected error: {e}", err=True)
+        logger.error(f"Unexpected error: {e}")
         sys.exit(1)
 
 

@@ -1,7 +1,7 @@
 import time
 import datetime
 from typing import Dict, Literal, Optional
-from . import history, concurrency
+from . import history, concurrency, logger
 
 MAX_POLLS = 21600 # 6 hours
 
@@ -15,8 +15,8 @@ def submit_backup_command(db, backup_command: str) -> tuple[bool, Optional[str]]
         return True, None
     except Exception as e:
         error_msg = f"Failed to submit backup command: {type(e).__name__}: {str(e)}"
-        print(f"error: {error_msg}")
-        print(f"backup_command: {backup_command}")
+        logger.error(error_msg)
+        logger.error(f"backup_command: {backup_command}")
         return False, error_msg
 
 
@@ -73,7 +73,7 @@ def poll_backup_status(db, label: str, database: str, max_polls: int = MAX_POLLS
             first_poll = False
             
             if state != last_state or poll_count % 10 == 0:
-                print(f"⏳ Backup status: {state} (poll {poll_count}/{max_polls})")
+                logger.progress(f"Backup status: {state} (poll {poll_count}/{max_polls})")
                 last_state = state
             
             if state in ["FINISHED", "CANCELLED"]:
@@ -161,7 +161,7 @@ def execute_backup(
         
     except Exception as e:
         error_msg = f"Unexpected error during backup execution: {type(e).__name__}: {str(e)}"
-        print(f"error: {error_msg}")
+        logger.error(error_msg)
         return {
             "success": False,
             "final_status": {"state": "ERROR", "label": label},

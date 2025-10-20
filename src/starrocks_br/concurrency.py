@@ -1,4 +1,5 @@
 from typing import Literal, List, Tuple
+from . import logger
 
 
 def reserve_job_slot(db, scope: str, label: str) -> None:
@@ -29,7 +30,7 @@ def _handle_active_job_conflicts(db, scope: str, active_jobs: List[Tuple[str, st
     for active_scope, active_label, _ in active_jobs:
         if _can_heal_stale_job(active_scope, active_label, db):
             _cleanup_stale_job(db, active_scope, active_label)
-            print(f"✓ Cleaned up stale backup job: {active_label}")
+            logger.success(f"Cleaned up stale backup job: {active_label}")
         else:
             _raise_concurrency_conflict(scope, active_jobs)
 
@@ -85,7 +86,7 @@ def _is_backup_job_stale(db, label: str) -> bool:
         return True
         
     except Exception as e:
-        print(f"Error checking backup job status: {e}")
+        logger.error(f"Error checking backup job status: {e}")
         return False
 
 

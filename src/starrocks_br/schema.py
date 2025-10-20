@@ -1,15 +1,33 @@
+from . import logger
+
 def initialize_ops_schema(db) -> None:
     """Initialize the ops database and all required control tables.
     
     Creates empty ops tables. Does NOT populate with sample data.
     Users must manually insert their table inventory records.
     """
-    db.execute("CREATE DATABASE IF NOT EXISTS ops")
     
+    logger.info("Creating ops database...")
+    db.execute("CREATE DATABASE IF NOT EXISTS ops")
+    logger.success("ops database created")
+    
+    logger.info("Creating ops.table_inventory...")
     db.execute(get_table_inventory_schema())
+    logger.success("ops.table_inventory created")
+    
+    logger.info("Creating ops.backup_history...")
     db.execute(get_backup_history_schema())
+    logger.success("ops.backup_history created")
+    
+    logger.info("Creating ops.restore_history...")
     db.execute(get_restore_history_schema())
+    logger.success("ops.restore_history created")
+    
+    logger.info("Creating ops.run_status...")
     db.execute(get_run_status_schema())
+    logger.success("ops.run_status created")
+    logger.info("")
+    logger.success("Schema initialized successfully!")
 
 
 def ensure_ops_schema(db) -> bool:
