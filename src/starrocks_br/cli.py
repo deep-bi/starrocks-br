@@ -1,4 +1,5 @@
 import click
+import os
 import sys
 from datetime import datetime
 from . import config as config_module
@@ -40,7 +41,7 @@ def init(config):
             host=cfg['host'],
             port=cfg['port'],
             user=cfg['user'],
-            password=cfg.get('password', ''),
+            password=os.getenv('STARROCKS_PASSWORD'),
             database=cfg['database']
         )
         
@@ -106,7 +107,7 @@ def backup_incremental(config, baseline_backup, group, name):
             host=cfg['host'],
             port=cfg['port'],
             user=cfg['user'],
-            password=cfg.get('password', ''),
+            password=os.getenv('STARROCKS_PASSWORD'),
             database=cfg['database']
         )
         
@@ -215,7 +216,7 @@ def backup_full(config, group, name):
             host=cfg['host'],
             port=cfg['port'],
             user=cfg['user'],
-            password=cfg.get('password', ''),
+            password=os.getenv('STARROCKS_PASSWORD'),
             database=cfg['database']
         )
         
@@ -315,7 +316,7 @@ def restore_partition(config, backup_label, table, partition):
             host=cfg['host'],
             port=cfg['port'],
             user=cfg['user'],
-            password=cfg.get('password', ''),
+            password=os.getenv('STARROCKS_PASSWORD'),
             database=cfg['database']
         )
         

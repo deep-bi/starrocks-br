@@ -13,7 +13,6 @@ def config_file():
         host: "127.0.0.1"
         port: 9030
         user: "root"
-        password: ""
         database: "test_db"
         repository: "test_repo"
         """)
@@ -61,7 +60,13 @@ def invalid_yaml_file():
         os.unlink(config_path)
 
 
-def test_should_run_incremental_backup_with_specific_baseline(config_file, mock_db, setup_common_mocks, mocker):
+@pytest.fixture
+def setup_password_env(monkeypatch):
+    """Setup STARROCKS_PASSWORD environment variable for testing."""
+    monkeypatch.setenv('STARROCKS_PASSWORD', 'test_password')
+
+
+def test_should_run_incremental_backup_with_specific_baseline(config_file, mock_db, setup_common_mocks, setup_password_env, mocker):
     """Test backup incremental command with specific baseline backup."""
     runner = CliRunner()
     
@@ -83,7 +88,7 @@ def test_should_run_incremental_backup_with_specific_baseline(config_file, mock_
     assert 'Using specified baseline backup: test_db_20251010_full' in result.output
 
 
-def test_should_run_incremental_backup_with_valid_config(config_file, mock_db, setup_common_mocks, mocker):
+def test_should_run_incremental_backup_with_valid_config(config_file, mock_db, setup_common_mocks, setup_password_env, mocker):
     """Test backup incremental command with default baseline (latest full backup)."""
     runner = CliRunner()
     
@@ -120,7 +125,7 @@ def test_should_fail_when_config_file_not_found():
     assert 'Error' in result.output or 'not found' in result.output.lower()
 
 
-def test_should_fail_when_cluster_is_unhealthy(config_file, mock_db, mocker):
+def test_should_fail_when_cluster_is_unhealthy(config_file, mock_db, setup_password_env, mocker):
     """Test that backup incremental fails when cluster health check fails."""
     runner = CliRunner()
     
@@ -132,7 +137,7 @@ def test_should_fail_when_cluster_is_unhealthy(config_file, mock_db, mocker):
     assert 'unhealthy' in result.output.lower() or 'error' in result.output.lower()
 
 
-def test_should_run_full_backup_with_valid_config(config_file, mock_db, setup_common_mocks, mocker):
+def test_should_run_full_backup_with_valid_config(config_file, mock_db, setup_common_mocks, setup_password_env, mocker):
     """Test backup full command."""
     runner = CliRunner()
     
@@ -150,7 +155,7 @@ def test_should_run_full_backup_with_valid_config(config_file, mock_db, setup_co
     assert 'Backup completed successfully' in result.output
 
 
-def test_should_run_full_backup_with_wildcard_group(config_file, mock_db, setup_common_mocks, mocker):
+def test_should_run_full_backup_with_wildcard_group(config_file, mock_db, setup_common_mocks, setup_password_env, mocker):
     """Test backup full command with wildcard group."""
     runner = CliRunner()
     
@@ -168,7 +173,7 @@ def test_should_run_full_backup_with_wildcard_group(config_file, mock_db, setup_
     assert 'Backup completed successfully' in result.output
 
 
-def test_should_run_restore_partition_with_valid_parameters(config_file, mock_db, mocker):
+def test_should_run_restore_partition_with_valid_parameters(config_file, mock_db, setup_password_env, mocker):
     """Test restore partition command."""
     runner = CliRunner()
     
@@ -191,7 +196,7 @@ def test_should_run_restore_partition_with_valid_parameters(config_file, mock_db
     assert 'Restore completed successfully' in result.output
 
 
-def test_should_fail_restore_when_missing_required_parameters(config_file):
+def test_should_fail_restore_when_missing_required_parameters(config_file, setup_password_env):
     """Test that restore partition fails when required parameters are missing."""
     runner = CliRunner()
     
@@ -200,7 +205,7 @@ def test_should_fail_restore_when_missing_required_parameters(config_file):
     assert result.exit_code != 0
 
 
-def test_should_handle_backup_failure_gracefully(config_file, mock_db, setup_common_mocks, mocker):
+def test_should_handle_backup_failure_gracefully(config_file, mock_db, setup_common_mocks, setup_password_env, mocker):
     """Test that backup incremental handles failures gracefully."""
     runner = CliRunner()
     
@@ -226,7 +231,7 @@ def test_should_handle_backup_failure_gracefully(config_file, mock_db, setup_com
     assert 'failed' in result.output.lower()
 
 
-def test_should_handle_job_slot_conflict(config_file, mock_db, mocker):
+def test_should_handle_job_slot_conflict(config_file, mock_db, setup_password_env, mocker):
     """Test that backup handles job slot conflicts appropriately."""
     runner = CliRunner()
     
@@ -257,7 +262,7 @@ def test_backup_group_command():
     assert "Usage:" in result.output
 
 
-def test_incremental_backup_with_no_partitions_warning(config_file, mock_db, setup_common_mocks, mocker):
+def test_incremental_backup_with_no_partitions_warning(config_file, mock_db, setup_common_mocks, setup_password_env, mocker):
     """Test incremental backup when no partitions are found"""
     runner = CliRunner()
     
@@ -275,7 +280,7 @@ def test_incremental_backup_with_no_partitions_warning(config_file, mock_db, set
     assert 'Warning: No partitions found to backup' in result.output
 
 
-def test_full_backup_with_no_tables_warning(config_file, mock_db, setup_common_mocks, mocker):
+def test_full_backup_with_no_tables_warning(config_file, mock_db, setup_common_mocks, setup_password_env, mocker):
     """Test full backup when no tables are found"""
     runner = CliRunner()
     
@@ -288,7 +293,7 @@ def test_full_backup_with_no_tables_warning(config_file, mock_db, setup_common_m
     assert 'Warning: No tables found in group' in result.output
 
 
-def test_restore_partition_invalid_table_format_error(config_file):
+def test_restore_partition_invalid_table_format_error(config_file, setup_password_env):
     """Test restore partition with invalid table format"""
     runner = CliRunner()
     
@@ -315,7 +320,7 @@ def test_cli_exception_handling_file_not_found():
     assert 'Error: Config file not found' in result.output
 
 
-def test_cli_exception_handling_value_error(invalid_yaml_file):
+def test_cli_exception_handling_value_error(invalid_yaml_file, setup_password_env):
     """Test CLI exception handling for ValueError"""
     runner = CliRunner()
     
@@ -327,7 +332,7 @@ def test_cli_exception_handling_value_error(invalid_yaml_file):
     assert 'Error: Unexpected error' in result.output
 
 
-def test_cli_exception_handling_runtime_error(config_file, mock_db, mocker):
+def test_cli_exception_handling_runtime_error(config_file, mock_db, setup_password_env, mocker):
     """Test CLI exception handling for RuntimeError"""
     runner = CliRunner()
     
@@ -341,7 +346,7 @@ def test_cli_exception_handling_runtime_error(config_file, mock_db, mocker):
     assert 'Error: Health check failed' in result.output
 
 
-def test_cli_exception_handling_generic_exception(config_file, mocker):
+def test_cli_exception_handling_generic_exception(config_file, setup_password_env, mocker):
     """Test CLI exception handling for generic Exception"""
     runner = CliRunner()
     
@@ -353,7 +358,7 @@ def test_cli_exception_handling_generic_exception(config_file, mocker):
     assert 'Error: Unexpected error' in result.output
 
 
-def test_init_command_successfully_creates_schema(config_file, mock_db, mocker):
+def test_init_command_successfully_creates_schema(config_file, mock_db, setup_password_env, mocker):
     """Test init command creates ops schema successfully"""
     runner = CliRunner()
     
@@ -380,7 +385,7 @@ def test_init_command_fails_with_invalid_config():
     assert 'Error: Config file not found' in result.output
 
 
-def test_init_command_shows_next_steps(config_file, mock_db, mocker):
+def test_init_command_shows_next_steps(config_file, mock_db, setup_password_env, mocker):
     """Test init command shows helpful next steps"""
     runner = CliRunner()
     
@@ -395,7 +400,7 @@ def test_init_command_shows_next_steps(config_file, mock_db, mocker):
     assert 'starrocks-br backup incremental --group' in result.output
 
 
-def test_should_fail_when_invalid_baseline_backup(config_file, mock_db, setup_common_mocks, mocker):
+def test_should_fail_when_invalid_baseline_backup(config_file, mock_db, setup_common_mocks, setup_password_env, mocker):
     """Test that incremental backup fails when specified baseline backup is invalid."""
     runner = CliRunner()
     
@@ -407,7 +412,7 @@ def test_should_fail_when_invalid_baseline_backup(config_file, mock_db, setup_co
     assert 'Baseline backup' in result.output and 'not found' in result.output
 
 
-def test_should_fail_when_no_full_backup_found(config_file, mock_db, setup_common_mocks, mocker):
+def test_should_fail_when_no_full_backup_found(config_file, mock_db, setup_common_mocks, setup_password_env, mocker):
     """Test that incremental backup fails when no full backup is found."""
     runner = CliRunner()
     
@@ -419,7 +424,7 @@ def test_should_fail_when_no_full_backup_found(config_file, mock_db, setup_commo
     assert 'No successful full backup found' in result.output
 
 
-def test_should_show_critical_warning_on_lost_backup_state(config_file, mock_db, setup_common_mocks, mocker):
+def test_should_show_critical_warning_on_lost_backup_state(config_file, mock_db, setup_common_mocks, setup_password_env, mocker):
     """Test that CLI shows critical warning when backup state is LOST."""
     runner = CliRunner()
     
@@ -448,7 +453,7 @@ def test_should_show_critical_warning_on_lost_backup_state(config_file, mock_db,
     assert 'Backup tracking lost' in result.output
 
 
-def test_should_show_critical_warning_on_lost_full_backup(config_file, mock_db, setup_common_mocks, mocker):
+def test_should_show_critical_warning_on_lost_full_backup(config_file, mock_db, setup_common_mocks, setup_password_env, mocker):
     """Test that CLI shows critical warning for LOST state in full backup."""
     runner = CliRunner()
     
@@ -464,4 +469,51 @@ def test_should_show_critical_warning_on_lost_full_backup(config_file, mock_db, 
     
     assert result.exit_code != 0
     assert 'CRITICAL: Backup tracking lost' in result.output
+
+
+def test_should_use_password_from_environment_variable(config_file, mocker):
+    """Test that database connection uses password from STARROCKS_PASSWORD environment variable."""
+    import os
+    
+    mock_db_class = mocker.patch('starrocks_br.db.StarRocksDB')
+    mock_db_instance = mocker.Mock()
+    mock_db_instance.__enter__ = mocker.Mock(return_value=mock_db_instance)
+    mock_db_instance.__exit__ = mocker.Mock(return_value=False)
+    mock_db_class.return_value = mock_db_instance
+    
+    test_password = 'test_env_password'
+    os.environ['STARROCKS_PASSWORD'] = test_password
+    
+    try:
+        runner = CliRunner()
+        
+        mocker.patch('starrocks_br.schema.ensure_ops_schema', return_value=False)
+        mocker.patch('starrocks_br.health.check_cluster_health', return_value=(True, "Healthy"))
+        mocker.patch('starrocks_br.repository.ensure_repository')
+        mocker.patch('starrocks_br.concurrency.reserve_job_slot')
+        mocker.patch('starrocks_br.planner.find_latest_full_backup', return_value={
+            'label': 'test_db_20251015_full',
+            'backup_type': 'full',
+            'finished_at': '2025-10-15 10:00:00'
+        })
+        mocker.patch('starrocks_br.planner.find_recent_partitions', return_value=[
+            {"database": "test_db", "table": "fact_table", "partition_name": "p20251016"}
+        ])
+        mocker.patch('starrocks_br.labels.generate_label', return_value='test_db_20251016_inc')
+        mocker.patch('starrocks_br.planner.build_incremental_backup_command', return_value='BACKUP DATABASE test_db SNAPSHOT test_db_20251016_inc TO test_repo')
+        mocker.patch('starrocks_br.executor.execute_backup', return_value={
+            'success': True,
+            'final_status': {'state': 'FINISHED'},
+            'error_message': None
+        })
+        
+        runner.invoke(cli.backup_incremental, ['--config', config_file, '--group', 'daily_incremental'])
+        
+        mock_db_class.assert_called_once()
+        call_args = mock_db_class.call_args
+        assert call_args[1]['password'] == test_password
+        
+    finally:
+        if 'STARROCKS_PASSWORD' in os.environ:
+            del os.environ['STARROCKS_PASSWORD']
 

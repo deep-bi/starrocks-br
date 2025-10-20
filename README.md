@@ -2,7 +2,7 @@
 
 ## Overview
 
-The StarRocks Backup & Restore tool provides production-grade automation for backup and restore operations following the playbook.md specifications.
+The StarRocks Backup & Restore tool provides production-grade automation for backup and restore operations.
 
 ## Installation
 
@@ -21,9 +21,16 @@ Create a `config.yaml` file with your StarRocks connection details:
 host: "127.0.0.1"
 port: 9030
 user: "root"
-password: ""
 database: "your_database"
 repository: "your_repo_name"
+```
+
+**Password Management**
+
+The database password must be provided via the `STARROCKS_PASSWORD` environment variable. This is a security measure to prevent storing credentials in configuration files.
+
+```bash
+export STARROCKS_PASSWORD="your_password"
 ```
 
 **Note:** The repository must be created in StarRocks using the `CREATE REPOSITORY` command before running backups. For example:
@@ -51,68 +58,66 @@ starrocks-br init --config config.yaml
 
 **What it does:**
 - Creates `ops` database
-- Creates `ops.table_inventory`: Table backup eligibility configuration
+- Creates `ops.table_inventory`: Inventory groups mapping to databases/tables
 - Creates `ops.backup_history`: Backup operation history
 - Creates `ops.restore_history`: Restore operation history
 - Creates `ops.run_status`: Job concurrency control
 
-**Next step:** Populate `ops.table_inventory` with your tables and their backup eligibility flags.
+**Next step:** Populate `ops.table_inventory` with your backup groups. For example:
+```sql
+INSERT INTO ops.table_inventory (inventory_group, database_name, table_name)
+VALUES
+  ('daily_facts', 'your_db', 'fact_sales'),
+  ('weekly_dims', 'your_db', 'dim_users'),
+  ('weekly_dims', 'your_db', 'dim_products'),
+  ('full_db_backup', 'your_db', '*'); -- Wildcard for all tables
+```
 
 **Note:** If you skip this step, the ops schema will be auto-created on your first backup/restore operation (with a warning).
 
 ### Backup Commands
 
-#### 1. Incremental Backup (Daily)
+Backups are managed through "inventory groups" defined in `ops.table_inventory`. This provides a flexible way to schedule different backup strategies for different sets of tables.
 
-Backs up partitions that have been updated in the last N days.
+#### 1. Full Backup
 
-```bash
-starrocks-br backup incremental --config config.yaml --days 7
-```
-
-**Flow:**
-1. Load config → verify cluster health
-2. Ensure repository exists
-3. Reserve job slot (prevent concurrent backups)
-4. Query `ops.table_inventory` for tables where `incremental_eligible = TRUE`
-5. Find recent partitions from `information_schema.partitions` (filtered by eligible tables)
-6. Generate unique label (format: `{db}_{yyyymmdd}_inc`)
-7. Build and execute `BACKUP SNAPSHOT ... PARTITION (...)` command
-8. Poll `SHOW BACKUP` until completion
-9. Log to `ops.backup_history` and release job slot
-
-#### 2. Weekly Full Backup
-
-Backs up dimension and non-partitioned tables from `ops.table_inventory`.
+Runs a full backup for all tables within a specified inventory group.
 
 ```bash
-starrocks-br backup weekly --config config.yaml
+starrocks-br backup full --config config.yaml --group <group_name>
 ```
 
+**Parameters:**
+- `--group`: The inventory group to back up.
+
 **Flow:**
-1. Load config → verify cluster health
-2. Ensure repository exists
-3. Reserve job slot
-4. Query `ops.table_inventory` for tables where `weekly_eligible = TRUE`
-5. Generate unique label (format: `{db}_{yyyymmdd}_weekly`)
-6. Build and execute `BACKUP SNAPSHOT ... ON (TABLE ...)` command
-7. Poll until completion and log results
+1. Load config → verify cluster health → ensure repository exists
+2. Reserve job slot (prevent concurrent backups)
+3. Query `ops.table_inventory` for all tables in the specified group.
+4. Generate a unique backup label.
+5. Build and execute the `BACKUP` command for the resolved tables.
+6. Poll `SHOW BACKUP` until completion and log results.
 
-#### 3. Monthly Full Database Backup
+#### 2. Incremental Backup
 
-Backs up the entire database.
+Backs up only the partitions that have changed since the last successful full backup for a given inventory group.
 
 ```bash
-starrocks-br backup monthly --config config.yaml
+starrocks-br backup incremental --config config.yaml --group <group_name>
 ```
 
+**Parameters:**
+- `--group`: The inventory group to back up.
+- `--baseline-backup` (Optional): Specify a backup label to use as the baseline instead of the latest full backup.
+
 **Flow:**
-1. Load config → verify cluster health
-2. Ensure repository exists
-3. Reserve job slot
-4. Generate unique label (format: `{db}_{yyyymmdd}_monthly`)
-5. Build and execute `BACKUP DATABASE ... SNAPSHOT` command
-6. Poll until completion and log results
+1. Load config → verify cluster health → ensure repository exists
+2. Reserve job slot
+3. Find the latest successful full backup for the group to use as a baseline.
+4. Find recent partitions from `information_schema.partitions` for tables in the group.
+5. Generate a unique backup label.
+6. Build and execute the `BACKUP` command for the new partitions.
+7. Poll `SHOW BACKUP` until completion and log results.
 
 ### Restore Commands
 
@@ -148,29 +153,26 @@ starrocks-br restore-partition \
 # 1. Initialize ops schema (run once)
 starrocks-br init --config config.yaml
 
-# 2. Populate table inventory (in StarRocks)
-# INSERT INTO ops.table_inventory VALUES (...);
+# 2. Populate table inventory with your groups (in StarRocks)
+INSERT INTO ops.table_inventory (inventory_group, database_name, table_name)
+VALUES
+  ('daily_incrementals', 'sales_db', 'fact_orders'),
+  ('weekly_full', 'sales_db', 'dim_customers'),
+  ('weekly_full', 'sales_db', 'dim_products');
 ```
 
-### Daily Production Backup (Mon-Sat)
+### Daily Incremental Backup (Mon-Sat)
 
 ```bash
 # Run via cron at 01:00
-0 1 * * 1-6 cd /path/to/starrocks-br && source .venv/bin/activate && starrocks-br backup incremental --config config.yaml --days 1
+0 1 * * 1-6 cd /path/to/starrocks-br && source .venv/bin/activate && starrocks-br backup incremental --config config.yaml --group daily_incrementals
 ```
 
 ### Weekly Full Backup (Sunday)
 
 ```bash
 # Run via cron at 01:00 on Sundays
-0 1 * * 0 cd /path/to/starrocks-br && source .venv/bin/activate && starrocks-br backup weekly --config config.yaml
-```
-
-### Monthly Baseline (First Sunday)
-
-```bash
-# Run via cron at 01:00 on the first Sunday of each month
-0 1 1-7 * 0 cd /path/to/starrocks-br && source .venv/bin/activate && starrocks-br backup monthly --config config.yaml
+0 1 * * 0 cd /path/to/starrocks-br && source .venv/bin/activate && starrocks-br backup full --config config.yaml --group weekly_full
 ```
 
 ### Disaster Recovery - Restore Recent Partition
@@ -224,7 +226,7 @@ WHERE state = 'ACTIVE';
 
 ## Testing
 
-The project includes comprehensive tests (142 tests, 90% coverage):
+The project includes comprehensive tests (150+ tests, 90%+ coverage).
 
 ```bash
 # Run all tests
@@ -246,12 +248,12 @@ pytest tests/test_cli.py -v
 - Cluster health checks
 - Job slot reservation (concurrency control)
 - Label generation with collision handling
-- Incremental/weekly/monthly backup planners with table eligibility filtering
+- Group-based backup planners for full and incremental backups
 - Schema initialization (ops tables) with auto-creation
 - Backup & restore history logging
 - Backup executor with polling
 - Restore operations with polling
-- **CLI commands (5 commands: init, 3 backup types, restore)**
+- CLI commands (init, backup full, backup incremental, restore-partition)
 
 📋 **Optional (deferred):**
 - Exponential backoff retry for job conflicts
