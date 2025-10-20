@@ -138,10 +138,6 @@ def backup_incremental(config, baseline_backup, group, name):
             
             click.echo(f"✓ Generated label: {label}")
             
-            concurrency.reserve_job_slot(database, scope='backup', label=label)
-            
-            click.echo(f"✓ Job slot reserved")
-            
             if baseline_backup:
                 click.echo(f"✓ Using specified baseline backup: {baseline_backup}")
             else:
@@ -165,6 +161,9 @@ def backup_incremental(config, baseline_backup, group, name):
                 partitions, cfg['repository'], label, cfg['database']
             )
             
+            concurrency.reserve_job_slot(database, scope='backup', label=label)
+            
+            click.echo(f"✓ Job slot reserved")
             click.echo(f"Starting incremental backup for group '{group}'...")
             result = executor.execute_backup(
                 database,
@@ -250,10 +249,6 @@ def backup_full(config, group, name):
             
             click.echo(f"✓ Generated label: {label}")
             
-            concurrency.reserve_job_slot(database, scope='backup', label=label)
-            
-            click.echo(f"✓ Job slot reserved")
-            
             backup_command = planner.build_full_backup_command(
                 database, group, cfg['repository'], label, cfg['database']
             )
@@ -262,6 +257,9 @@ def backup_full(config, group, name):
                 click.echo(f"Warning: No tables found in group '{group}' for database '{cfg['database']}' to backup", err=True)
                 sys.exit(1)
             
+            concurrency.reserve_job_slot(database, scope='backup', label=label)
+            
+            click.echo(f"✓ Job slot reserved")
             click.echo(f"Starting full backup for group '{group}'...")
             result = executor.execute_backup(
                 database,
