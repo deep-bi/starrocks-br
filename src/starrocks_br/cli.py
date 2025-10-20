@@ -129,9 +129,12 @@ def backup_incremental(config, baseline_backup, group, name):
             
             click.echo(f"✓ Repository '{cfg['repository']}' verified")
             
-            resolved = labels.resolve_label(database, name)
-            today = datetime.now().strftime("%Y-%m-%d")
-            label = resolved or labels.generate_label(cfg['database'], today, 'incremental')
+            label = labels.determine_backup_label(
+                db=database,
+                backup_type='incremental',
+                database_name=cfg['database'],
+                custom_name=name
+            )
             
             click.echo(f"✓ Generated label: {label}")
             
@@ -238,9 +241,12 @@ def backup_full(config, group, name):
             
             click.echo(f"✓ Repository '{cfg['repository']}' verified")
             
-            resolved = labels.resolve_label(database, name)
-            today = datetime.now().strftime("%Y-%m-%d")
-            label = resolved or labels.generate_label(cfg['database'], today, 'full')
+            label = labels.determine_backup_label(
+                db=database,
+                backup_type='full',
+                database_name=cfg['database'],
+                custom_name=name
+            )
             
             click.echo(f"✓ Generated label: {label}")
             

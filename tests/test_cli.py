@@ -3,6 +3,7 @@ import os
 import pytest
 from click.testing import CliRunner
 from starrocks_br import cli
+from starrocks_br.labels import datetime
 
 
 @pytest.fixture
@@ -73,7 +74,7 @@ def test_should_run_incremental_backup_with_specific_baseline(config_file, mock_
     mocker.patch('starrocks_br.planner.find_recent_partitions', return_value=[
         {"database": "test_db", "table": "fact_table", "partition_name": "p20251016"}
     ])
-    mocker.patch('starrocks_br.labels.generate_label', return_value='test_db_20251016_inc')
+    mocker.patch('starrocks_br.labels.determine_backup_label', return_value='test_db_20251016_inc')
     mocker.patch('starrocks_br.planner.build_incremental_backup_command', return_value='BACKUP DATABASE test_db SNAPSHOT test_db_20251016_inc TO test_repo')
     mocker.patch('starrocks_br.executor.execute_backup', return_value={
         'success': True,
@@ -100,7 +101,7 @@ def test_should_run_incremental_backup_with_valid_config(config_file, mock_db, s
     mocker.patch('starrocks_br.planner.find_recent_partitions', return_value=[
         {"database": "test_db", "table": "fact_table", "partition_name": "p20251016"}
     ])
-    mocker.patch('starrocks_br.labels.generate_label', return_value='test_db_20251016_inc')
+    mocker.patch('starrocks_br.labels.determine_backup_label', return_value='test_db_20251016_inc')
     mocker.patch('starrocks_br.planner.build_incremental_backup_command', return_value='BACKUP DATABASE test_db SNAPSHOT test_db_20251016_inc TO test_repo')
     mocker.patch('starrocks_br.executor.execute_backup', return_value={
         'success': True,
@@ -142,7 +143,7 @@ def test_should_run_full_backup_with_valid_config(config_file, mock_db, setup_co
     runner = CliRunner()
     
     mocker.patch('starrocks_br.planner.build_full_backup_command', return_value='BACKUP DATABASE test_db SNAPSHOT test_db_20251016_full TO test_repo')
-    mocker.patch('starrocks_br.labels.generate_label', return_value='test_db_20251016_full')
+    mocker.patch('starrocks_br.labels.determine_backup_label', return_value='test_db_20251016_full')
     mocker.patch('starrocks_br.executor.execute_backup', return_value={
         'success': True,
         'final_status': {'state': 'FINISHED'},
@@ -160,7 +161,7 @@ def test_should_run_full_backup_with_wildcard_group(config_file, mock_db, setup_
     runner = CliRunner()
     
     mocker.patch('starrocks_br.planner.build_full_backup_command', return_value='BACKUP DATABASE test_db SNAPSHOT test_db_20251016_full TO test_repo')
-    mocker.patch('starrocks_br.labels.generate_label', return_value='test_db_20251016_full')
+    mocker.patch('starrocks_br.labels.determine_backup_label', return_value='test_db_20251016_full')
     mocker.patch('starrocks_br.executor.execute_backup', return_value={
         'success': True,
         'final_status': {'state': 'FINISHED'},
@@ -217,7 +218,7 @@ def test_should_handle_backup_failure_gracefully(config_file, mock_db, setup_com
     mocker.patch('starrocks_br.planner.find_recent_partitions', return_value=[
         {"database": "test_db", "table": "fact_table", "partition_name": "p20251016"}
     ])
-    mocker.patch('starrocks_br.labels.generate_label', return_value='test_db_20251016_inc')
+    mocker.patch('starrocks_br.labels.determine_backup_label', return_value='test_db_20251016_inc')
     mocker.patch('starrocks_br.planner.build_incremental_backup_command', return_value='BACKUP DATABASE test_db SNAPSHOT test_db_20251016_inc TO test_repo')
     mocker.patch('starrocks_br.executor.execute_backup', return_value={
         'success': False,
@@ -271,7 +272,7 @@ def test_incremental_backup_with_no_partitions_warning(config_file, mock_db, set
         'backup_type': 'full',
         'finished_at': '2025-10-15 10:00:00'
     })
-    mocker.patch('starrocks_br.labels.generate_label', return_value='test_db_20251016_inc')
+    mocker.patch('starrocks_br.labels.determine_backup_label', return_value='test_db_20251016_inc')
     mocker.patch('starrocks_br.planner.find_recent_partitions', return_value=[])
     
     result = runner.invoke(cli.backup_incremental, ['--config', config_file, '--group', 'daily_incremental'])
@@ -284,7 +285,7 @@ def test_full_backup_with_no_tables_warning(config_file, mock_db, setup_common_m
     """Test full backup when no tables are found"""
     runner = CliRunner()
     
-    mocker.patch('starrocks_br.labels.generate_label', return_value='test_db_20251016_full')
+    mocker.patch('starrocks_br.labels.determine_backup_label', return_value='test_db_20251016_full')
     mocker.patch('starrocks_br.planner.build_full_backup_command', return_value='')
     
     result = runner.invoke(cli.backup_full, ['--config', config_file, '--group', 'empty_group'])
@@ -436,7 +437,7 @@ def test_should_show_critical_warning_on_lost_backup_state(config_file, mock_db,
     mocker.patch('starrocks_br.planner.find_recent_partitions', return_value=[
         {"database": "test_db", "table": "fact_table", "partition_name": "p20251016"}
     ])
-    mocker.patch('starrocks_br.labels.generate_label', return_value='test_db_20251016_inc')
+    mocker.patch('starrocks_br.labels.determine_backup_label', return_value='test_db_20251016_inc')
     mocker.patch('starrocks_br.planner.build_incremental_backup_command', return_value='BACKUP DATABASE test_db SNAPSHOT test_db_20251016_inc TO test_repo')
     mocker.patch('starrocks_br.executor.execute_backup', return_value={
         'success': False,
@@ -458,7 +459,7 @@ def test_should_show_critical_warning_on_lost_full_backup(config_file, mock_db, 
     runner = CliRunner()
     
     mocker.patch('starrocks_br.planner.build_full_backup_command', return_value='BACKUP DATABASE test_db SNAPSHOT test_db_20251016_full TO test_repo')
-    mocker.patch('starrocks_br.labels.generate_label', return_value='test_db_20251016_full')
+    mocker.patch('starrocks_br.labels.determine_backup_label', return_value='test_db_20251016_full')
     mocker.patch('starrocks_br.executor.execute_backup', return_value={
         'success': False,
         'final_status': {'state': 'LOST'},
@@ -499,7 +500,7 @@ def test_should_use_password_from_environment_variable(config_file, mocker):
         mocker.patch('starrocks_br.planner.find_recent_partitions', return_value=[
             {"database": "test_db", "table": "fact_table", "partition_name": "p20251016"}
         ])
-        mocker.patch('starrocks_br.labels.generate_label', return_value='test_db_20251016_inc')
+        mocker.patch('starrocks_br.labels.determine_backup_label', return_value='test_db_20251016_inc')
         mocker.patch('starrocks_br.planner.build_incremental_backup_command', return_value='BACKUP DATABASE test_db SNAPSHOT test_db_20251016_inc TO test_repo')
         mocker.patch('starrocks_br.executor.execute_backup', return_value={
             'success': True,
@@ -516,4 +517,82 @@ def test_should_use_password_from_environment_variable(config_file, mocker):
     finally:
         if 'STARROCKS_PASSWORD' in os.environ:
             del os.environ['STARROCKS_PASSWORD']
+
+
+def test_should_prevent_incremental_backup_label_collision(config_file, mock_db, setup_common_mocks, setup_password_env, mocker):
+    runner = CliRunner()
+    
+    def mock_query(query, params=None):
+        if "ops.backup_history" in query and params:
+            if params[0] == "test_db_20251020_incremental%":
+                return [("test_db_20251020_incremental",)]
+        return []
+    
+    mock_db.query.side_effect = mock_query
+    
+    mocker.patch('starrocks_br.planner.find_latest_full_backup', return_value={
+        'label': 'sales_db_20251019_full',
+        'backup_type': 'full',
+        'finished_at': '2025-10-19 10:00:00'
+    })
+    mocker.patch('starrocks_br.planner.find_recent_partitions', return_value=[
+        {"database": "sales_db", "table": "fact_table", "partition_name": "p20251020"}
+    ])
+    mocker.patch('starrocks_br.planner.build_incremental_backup_command', return_value='BACKUP DATABASE sales_db SNAPSHOT sales_db_20251020_incremental_r1 TO test_repo')
+    mocker.patch('starrocks_br.executor.execute_backup', return_value={
+        'success': True,
+        'final_status': {'state': 'FINISHED'},
+        'error_message': None
+    })
+    
+    mock_datetime = mocker.patch('starrocks_br.labels.datetime') 
+    mock_datetime.now.return_value.strftime.return_value = "20251020"
+    
+    result = runner.invoke(cli.backup_incremental, [
+        '--config', config_file, 
+        '--group', 'daily_incremental'
+    ])
+    
+    assert result.exit_code == 0
+    assert 'Backup completed successfully' in result.output
+    assert 'Generated label:' in result.output
+    
+    output_lines = result.output.split('\n')
+    label_line = [line for line in output_lines if 'Generated label:' in line][0]
+    assert '_r1' in label_line
+
+
+def test_should_prevent_full_backup_label_collision(config_file, mock_db, setup_common_mocks, setup_password_env, mocker):
+    runner = CliRunner()
+    
+    def mock_query(query, params=None):
+        if "ops.backup_history" in query and params:
+            if params[0] == "test_db_20251020_full%":
+                return [("test_db_20251020_full",)]
+        return []
+    
+    mock_db.query.side_effect = mock_query
+    
+    mocker.patch('starrocks_br.planner.build_full_backup_command', return_value='BACKUP DATABASE sales_db SNAPSHOT sales_db_20251020_full_r1 TO test_repo')
+    mocker.patch('starrocks_br.executor.execute_backup', return_value={
+        'success': True,
+        'final_status': {'state': 'FINISHED'},
+        'error_message': None
+    })
+    
+    mock_datetime = mocker.patch('starrocks_br.labels.datetime') 
+    mock_datetime.now.return_value.strftime.return_value = "20251020"
+    
+    result = runner.invoke(cli.backup_full, [
+        '--config', config_file, 
+        '--group', 'weekly_full'
+    ])
+    
+    assert result.exit_code == 0
+    assert 'Backup completed successfully' in result.output
+    assert 'Generated label:' in result.output
+    
+    output_lines = result.output.split('\n')
+    label_line = [line for line in output_lines if 'Generated label:' in line][0]
+    assert '_r1' in label_line
 

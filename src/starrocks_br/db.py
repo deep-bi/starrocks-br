@@ -54,11 +54,12 @@ class StarRocksDB:
         finally:
             cursor.close()
     
-    def query(self, sql: str) -> List[tuple]:
+    def query(self, sql: str, params: tuple = None) -> List[tuple]:
         """Execute a SQL query and return results.
         
         Args:
             sql: SQL query to execute
+            params: Optional tuple of parameters for parameterized queries
             
         Returns:
             List of tuples containing query results
@@ -68,7 +69,10 @@ class StarRocksDB:
         
         cursor = self._connection.cursor()
         try:
-            cursor.execute(sql)
+            if params:
+                cursor.execute(sql, params)
+            else:
+                cursor.execute(sql)
             return cursor.fetchall()
         finally:
             cursor.close()
