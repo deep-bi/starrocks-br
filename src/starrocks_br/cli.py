@@ -85,7 +85,8 @@ def backup():
 @backup.command('incremental')
 @click.option('--config', required=True, help='Path to config YAML file')
 @click.option('--baseline-backup', help='Specific backup label to use as baseline (optional). If not provided, uses the latest successful full backup.')
-def backup_incremental(config, baseline_backup):
+@click.option('--name', help='Optional logical name (label) for the backup. Supports -v#r placeholder for auto-versioning.')
+def backup_incremental(config, baseline_backup, name):
     """Run incremental backup of partitions changed since the latest full backup.
     
     By default, uses the latest successful full backup (weekly or monthly) as baseline.
@@ -123,8 +124,9 @@ def backup_incremental(config, baseline_backup):
             
             click.echo(f"✓ Repository '{cfg['repository']}' verified")
             
+            resolved = labels.resolve_label(database, name)
             today = datetime.now().strftime("%Y-%m-%d")
-            label = labels.generate_label(cfg['database'], today, 'inc')
+            label = resolved or labels.generate_label(cfg['database'], today, 'inc')
             
             click.echo(f"✓ Generated label: {label}")
             
@@ -191,7 +193,8 @@ def backup_incremental(config, baseline_backup):
 
 @backup.command('full-tables')
 @click.option('--config', required=True, help='Path to config YAML file')
-def backup_tables(config):
+@click.option('--name', help='Optional logical name (label) for the backup. Supports -v#r placeholder for auto-versioning.')
+def backup_tables(config, name):
     """Run weekly full backup of dimension and non-partitioned tables.
     
     Flow: load config → check health → ensure repository → reserve job slot →
@@ -226,8 +229,9 @@ def backup_tables(config):
             
             click.echo(f"✓ Repository '{cfg['repository']}' verified")
             
+            resolved = labels.resolve_label(database, name)
             today = datetime.now().strftime("%Y-%m-%d")
-            label = labels.generate_label(cfg['database'], today, 'weekly')
+            label = resolved or labels.generate_label(cfg['database'], today, 'weekly')
             
             click.echo(f"✓ Generated label: {label}")
             
@@ -285,7 +289,8 @@ def backup_tables(config):
 
 @backup.command('full-database')
 @click.option('--config', required=True, help='Path to config YAML file')
-def backup_full_database(config):
+@click.option('--name', help='Optional logical name (label) for the backup. Supports -v#r placeholder for auto-versioning.')
+def backup_full_database(config, name):
     """Run monthly full database backup.
     
     Flow: load config → check health → ensure repository → reserve job slot →
@@ -320,8 +325,9 @@ def backup_full_database(config):
             
             click.echo(f"✓ Repository '{cfg['repository']}' verified")
             
+            resolved = labels.resolve_label(database, name)
             today = datetime.now().strftime("%Y-%m-%d")
-            label = labels.generate_label(cfg['database'], today, 'monthly')
+            label = resolved or labels.generate_label(cfg['database'], today, 'monthly')
             
             click.echo(f"✓ Generated label: {label}")
             

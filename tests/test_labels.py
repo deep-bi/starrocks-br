@@ -39,3 +39,27 @@ def test_should_handle_different_database_names():
     
     assert label1 == "db1_20251015_inc"
     assert label2 == "db2_20251015_inc"
+
+
+def test_should_resolve_label_without_placeholder_returns_same():
+    db = None
+    assert labels.resolve_label(db, "my-backup-name") == "my-backup-name"
+
+
+def test_should_resolve_label_none_returns_none():
+    db = None
+    assert labels.resolve_label(db, None) is None
+
+
+def test_should_resolve_versioned_label_first_time(mocker):
+    db = mocker.Mock()
+    db.query.return_value = []
+    result = labels.resolve_label(db, "release-backup-v#r")
+    assert result == "release-backup-v1"
+
+
+def test_should_resolve_versioned_label_increment(mocker):
+    db = mocker.Mock()
+    db.query.return_value = [("release-backup-v1",), ("release-backup-v3",)]
+    result = labels.resolve_label(db, "release-backup-v#r")
+    assert result == "release-backup-v4"
