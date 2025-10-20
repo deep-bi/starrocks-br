@@ -177,9 +177,9 @@ def backup_incremental(config, days):
         sys.exit(1)
 
 
-@backup.command('weekly')
+@backup.command('full-tables')
 @click.option('--config', required=True, help='Path to config YAML file')
-def backup_weekly(config):
+def backup_tables(config):
     """Run weekly full backup of dimension and non-partitioned tables.
     
     Flow: load config → check health → ensure repository → reserve job slot →
@@ -271,9 +271,9 @@ def backup_weekly(config):
         sys.exit(1)
 
 
-@backup.command('monthly')
+@backup.command('full-database')
 @click.option('--config', required=True, help='Path to config YAML file')
-def backup_monthly(config):
+def backup_full_database(config):
     """Run monthly full database backup.
     
     Flow: load config → check health → ensure repository → reserve job slot →

@@ -1,4 +1,5 @@
 import time
+import datetime
 from typing import Dict, Optional
 from . import history, concurrency
 
@@ -115,6 +116,8 @@ def execute_backup(
     
     if not database:
         database = _extract_database_from_command(backup_command)
+
+    started_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     success, submit_error = submit_backup_command(db, backup_command)
     if not success:
@@ -137,8 +140,8 @@ def execute_backup(
                     "backup_type": backup_type or "unknown",
                     "status": final_status["state"],
                     "repository": repository or "unknown",
-                    "started_at": None,
-                    "finished_at": None,
+                    "started_at": started_at,
+                    "finished_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "error_message": None if success else (final_status["state"] or ""),
                 },
             )

@@ -119,7 +119,7 @@ def test_should_run_weekly_backup_with_valid_config(config_file, mock_db, setup_
         'error_message': None
     })
     
-    result = runner.invoke(cli.backup_weekly, ['--config', config_file])
+    result = runner.invoke(cli.backup_tables, ['--config', config_file])
     
     assert result.exit_code == 0
     assert 'Backup completed successfully' in result.output
@@ -137,7 +137,7 @@ def test_should_run_monthly_backup_with_valid_config(config_file, mock_db, setup
         'error_message': None
     })
     
-    result = runner.invoke(cli.backup_monthly, ['--config', config_file])
+    result = runner.invoke(cli.backup_full_database, ['--config', config_file])
     
     assert result.exit_code == 0
     assert 'Backup completed successfully' in result.output
@@ -247,7 +247,7 @@ def test_weekly_backup_with_no_tables_warning(config_file, mock_db, setup_common
     mocker.patch('starrocks_br.labels.generate_label', return_value='test_db_20251016_weekly')
     mocker.patch('starrocks_br.planner.find_weekly_eligible_tables', return_value=[])
     
-    result = runner.invoke(cli.backup_weekly, ['--config', config_file])
+    result = runner.invoke(cli.backup_tables, ['--config', config_file])
     
     assert result.exit_code == 1
     assert 'Warning: No tables found to backup' in result.output
@@ -399,7 +399,7 @@ def test_should_show_critical_warning_on_lost_weekly_backup(config_file, mock_db
         'error_message': 'Backup tracking lost - race condition detected'
     })
     
-    result = runner.invoke(cli.backup_weekly, ['--config', config_file])
+    result = runner.invoke(cli.backup_tables, ['--config', config_file])
     
     assert result.exit_code != 0
     assert 'CRITICAL: Backup tracking lost' in result.output
@@ -417,7 +417,7 @@ def test_should_show_critical_warning_on_lost_monthly_backup(config_file, mock_d
         'error_message': 'Backup tracking lost'
     })
     
-    result = runner.invoke(cli.backup_monthly, ['--config', config_file])
+    result = runner.invoke(cli.backup_full_database, ['--config', config_file])
     
     assert result.exit_code != 0
     assert 'CRITICAL: Backup tracking lost' in result.output

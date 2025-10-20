@@ -22,7 +22,6 @@ def log_backup(db, entry: Dict[str, Optional[str]]) -> None:
     finished_at = entry.get("finished_at", "NULL")
     error_message = entry.get("error_message")
 
-    # Build SQL with simple escaping for single quotes
     def esc(val: Optional[str]) -> str:
         if val is None:
             return "NULL"
