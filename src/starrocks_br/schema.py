@@ -26,6 +26,10 @@ def initialize_ops_schema(db) -> None:
     logger.info("Creating ops.run_status...")
     db.execute(get_run_status_schema())
     logger.success("ops.run_status created")
+    
+    logger.info("Creating ops.backup_partitions...")
+    db.execute(get_backup_partitions_schema())
+    logger.success("ops.backup_partitions created")
     logger.info("")
     logger.success("Schema initialized successfully!")
 
@@ -46,7 +50,7 @@ def ensure_ops_schema(db) -> bool:
         db.execute("USE ops")
         tables_result = db.query("SHOW TABLES")
         
-        if not tables_result or len(tables_result) < 4:
+        if not tables_result or len(tables_result) < 5:
             initialize_ops_schema(db)
             return True
         
@@ -122,4 +126,19 @@ def get_run_status_schema() -> str:
     )
     PRIMARY KEY (scope, label)
     COMMENT "Tracks active and recently completed jobs for concurrency control"
+    """
+
+
+def get_backup_partitions_schema() -> str:
+    """Get CREATE TABLE statement for backup_partitions."""
+    return """
+    CREATE TABLE IF NOT EXISTS ops.backup_partitions (
+        label STRING NOT NULL COMMENT "The backup label this partition belongs to. FK to ops.backup_history.label.",
+        database_name STRING NOT NULL COMMENT "The name of the database the partition belongs to.",
+        table_name STRING NOT NULL COMMENT "The name of the table the partition belongs to.",
+        partition_name STRING NOT NULL COMMENT "The name of the specific partition.",
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT "Timestamp when this record was created."
+    )
+    PRIMARY KEY (label, database_name, table_name, partition_name)
+    COMMENT "Tracks every partition included in a backup snapshot."
     """

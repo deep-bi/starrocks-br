@@ -187,3 +187,73 @@ def build_full_backup_command(db, group_name: str, repository: str, label: str, 
     return f"""BACKUP DATABASE {database} SNAPSHOT {label}
     TO {repository}
     ON ({on_clause})"""
+
+
+def record_backup_partitions(db, label: str, partitions: List[Dict[str, str]]) -> None:
+    """Record partition metadata for a backup in ops.backup_partitions table.
+    
+    Args:
+        db: Database connection
+        label: Backup label
+        partitions: List of partitions with keys: database, table, partition_name
+    """
+    if not partitions:
+        return
+    
+    for partition in partitions:
+        db.execute(f"""
+            INSERT INTO ops.backup_partitions 
+            (label, database_name, table_name, partition_name)
+            VALUES ('{label}', '{partition['database']}', '{partition['table']}', '{partition['partition_name']}')
+        """)
+
+
+def get_all_partitions_for_tables(db, database: str, tables: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    """Get all existing partitions for the specified tables.
+    
+    Args:
+        db: Database connection
+        database: Database name
+        tables: List of tables with keys: database, table
+        
+    Returns:
+        List of partitions with keys: database, table, partition_name
+    """
+    if not tables:
+        return []
+    
+    db_tables = [t for t in tables if t['database'] == database]
+    if not db_tables:
+        return []
+    
+    where_conditions = [f"DB_NAME = '{database}'", "PARTITION_NAME IS NOT NULL"]
+    
+    table_conditions = []
+    for table in db_tables:
+        if table['table'] == '*':
+            pass
+        else:
+            table_conditions.append(f"TABLE_NAME = '{table['table']}'")
+    
+    if table_conditions:
+        where_conditions.append("(" + " OR ".join(table_conditions) + ")")
+    
+    where_clause = " AND ".join(where_conditions)
+    
+    query = f"""
+    SELECT DB_NAME, TABLE_NAME, PARTITION_NAME
+    FROM information_schema.partitions_meta 
+    WHERE {where_clause}
+    ORDER BY TABLE_NAME, PARTITION_NAME
+    """
+    
+    rows = db.query(query)
+    
+    return [
+        {
+            "database": row[0],
+            "table": row[1], 
+            "partition_name": row[2]
+        }
+        for row in rows
+    ]

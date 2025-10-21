@@ -1,3 +1,4 @@
+import pytest
 from unittest.mock import Mock, patch
 from starrocks_br import restore
 from starrocks_br import history
@@ -640,3 +641,315 @@ def test_should_log_restore_history_with_failure_state():
     assert entry["status"] == "FAILED"
     assert entry["repository"] == "test_repo"
     assert entry["restore_type"] == "partition"
+
+
+def test_should_find_restore_pair_for_full_backup(mocker):
+    """Test finding restore pair for a full backup (returns single label)."""
+    db = mocker.Mock()
+    db.query.return_value = [
+        ("sales_db_20251015_full", "full", "2025-10-15 10:00:00")
+    ]
+    
+    result = restore.find_restore_pair(db, "sales_db_20251015_full")
+    
+    assert result == ["sales_db_20251015_full"]
+    
+    query = db.query.call_args[0][0]
+    assert "ops.backup_history" in query
+    assert "label = 'sales_db_20251015_full'" in query
+    assert "status = 'FINISHED'" in query
+
+
+def test_should_find_restore_pair_for_incremental_backup(mocker):
+    """Test finding restore pair for an incremental backup (returns full + incremental)."""
+    db = mocker.Mock()
+    db.query.side_effect = [
+        [("sales_db_20251016_inc", "incremental", "2025-10-16 10:00:00")],  # Target backup
+        [("sales_db_20251015_full", "full", "2025-10-15 10:00:00")]  # Base full backup
+    ]
+    
+    result = restore.find_restore_pair(db, "sales_db_20251016_inc")
+    
+    assert result == ["sales_db_20251015_full", "sales_db_20251016_inc"]
+    assert db.query.call_count == 2
+
+
+def test_should_raise_error_when_target_label_not_found(mocker):
+    """Test that find_restore_pair raises error when target label not found."""
+    db = mocker.Mock()
+    db.query.return_value = []
+    
+    with pytest.raises(ValueError, match="Backup label 'nonexistent' not found"):
+        restore.find_restore_pair(db, "nonexistent")
+
+
+def test_should_raise_error_when_incremental_has_no_full_backup(mocker):
+    """Test that find_restore_pair raises error when incremental has no preceding full backup."""
+    db = mocker.Mock()
+    db.query.side_effect = [
+        [("sales_db_20251016_inc", "incremental", "2025-10-16 10:00:00")],  # Target backup
+        []  # No full backup found
+    ]
+    
+    with pytest.raises(ValueError, match="No successful full backup found before incremental"):
+        restore.find_restore_pair(db, "sales_db_20251016_inc")
+
+
+def test_should_raise_error_for_unknown_backup_type(mocker):
+    """Test that find_restore_pair raises error for unknown backup type."""
+    db = mocker.Mock()
+    db.query.return_value = [
+        ("sales_db_20251015_unknown", "unknown", "2025-10-15 10:00:00")
+    ]
+    
+    with pytest.raises(ValueError, match="Unknown backup type 'unknown'"):
+        restore.find_restore_pair(db, "sales_db_20251015_unknown")
+
+
+def test_should_get_tables_from_backup_without_group_filter(mocker):
+    """Test getting tables from backup without group filtering."""
+    db = mocker.Mock()
+    db.query.return_value = [
+        ("sales_db", "fact_sales"),
+        ("sales_db", "dim_customers"),
+        ("orders_db", "fact_orders"),
+    ]
+    
+    result = restore.get_tables_from_backup(db, "sales_db_20251015_full")
+    
+    assert result == ["sales_db.fact_sales", "sales_db.dim_customers", "orders_db.fact_orders"]
+    
+    query = db.query.call_args[0][0]
+    assert "ops.backup_partitions" in query
+    assert "label = 'sales_db_20251015_full'" in query
+
+
+def test_should_get_tables_from_backup_with_group_filter(mocker):
+    """Test getting tables from backup with group filtering."""
+    db = mocker.Mock()
+    db.query.side_effect = [
+        [("sales_db", "fact_sales"), ("sales_db", "dim_customers"), ("orders_db", "fact_orders")],  # Backup tables
+        [("sales_db", "fact_sales"), ("sales_db", "dim_customers")]  # Group tables
+    ]
+    
+    result = restore.get_tables_from_backup(db, "sales_db_20251015_full", group="daily_incremental")
+    
+    assert result == ["sales_db.fact_sales", "sales_db.dim_customers"]
+    assert db.query.call_count == 2
+
+
+def test_should_return_empty_list_when_no_tables_in_backup(mocker):
+    """Test that get_tables_from_backup returns empty list when no tables in backup."""
+    db = mocker.Mock()
+    db.query.return_value = []
+    
+    result = restore.get_tables_from_backup(db, "empty_backup")
+    
+    assert result == []
+
+
+def test_should_return_empty_list_when_group_has_no_tables(mocker):
+    """Test that get_tables_from_backup returns empty list when group has no tables."""
+    db = mocker.Mock()
+    db.query.side_effect = [
+        [("sales_db", "fact_sales")],  # Backup tables
+        []  # No group tables
+    ]
+    
+    result = restore.get_tables_from_backup(db, "sales_db_20251015_full", group="empty_group")
+    
+    assert result == []
+
+
+def test_should_build_restore_command_with_rename():
+    """Test building restore command with AS clause for temporary tables."""
+    backup_label = "sales_db_20251015_full"
+    repo_name = "my_repo"
+    tables = ["sales_db.fact_sales", "sales_db.dim_customers"]
+    rename_suffix = "_restored"
+    
+    command = restore._build_restore_command_with_rename(backup_label, repo_name, tables, rename_suffix)
+    
+    assert "RESTORE SNAPSHOT sales_db_20251015_full" in command
+    assert "FROM my_repo" in command
+    assert "TABLE fact_sales AS fact_sales_restored" in command
+    assert "TABLE dim_customers AS dim_customers_restored" in command
+
+
+def test_should_build_restore_command_without_rename():
+    """Test building restore command without AS clause."""
+    backup_label = "sales_db_20251016_inc"
+    repo_name = "my_repo"
+    tables = ["sales_db.fact_sales", "sales_db.dim_customers"]
+    
+    command = restore._build_restore_command_without_rename(backup_label, repo_name, tables)
+    
+    assert "RESTORE SNAPSHOT sales_db_20251016_inc" in command
+    assert "FROM my_repo" in command
+    assert "TABLE fact_sales" in command
+    assert "TABLE dim_customers" in command
+    assert "AS" not in command
+
+
+def test_should_perform_atomic_rename(mocker):
+    """Test performing atomic rename of temporary tables."""
+    db = mocker.Mock()
+    tables = ["sales_db.fact_sales", "sales_db.dim_customers"]
+    rename_suffix = "_restored"
+    
+    result = restore._perform_atomic_rename(db, tables, rename_suffix)
+    
+    assert result["success"] is True
+    assert db.execute.call_count == 4  # 2 tables * 2 rename statements each
+    
+    calls = [call[0][0] for call in db.execute.call_args_list]
+    assert "RENAME TABLE sales_db.fact_sales TO sales_db.fact_sales_backup" in calls
+    assert "RENAME TABLE sales_db.fact_sales_restored TO sales_db.fact_sales" in calls
+    assert "RENAME TABLE sales_db.dim_customers TO sales_db.dim_customers_backup" in calls
+    assert "RENAME TABLE sales_db.dim_customers_restored TO sales_db.dim_customers" in calls
+
+
+def test_should_handle_atomic_rename_failure(mocker):
+    """Test handling of atomic rename failure."""
+    db = mocker.Mock()
+    db.execute.side_effect = Exception("Rename failed")
+    tables = ["sales_db.fact_sales"]
+    rename_suffix = "_restored"
+    
+    result = restore._perform_atomic_rename(db, tables, rename_suffix)
+    
+    assert result["success"] is False
+    assert "Failed to perform atomic rename" in result["error_message"]
+
+
+def test_should_execute_restore_flow_with_full_backup(mocker):
+    """Test executing restore flow with full backup only."""
+    db = mocker.Mock()
+    repo_name = "my_repo"
+    restore_pair = ["sales_db_20251015_full"]
+    tables_to_restore = ["sales_db.fact_sales", "sales_db.dim_customers"]
+    rename_suffix = "_restored"
+    
+    mocker.patch('starrocks_br.restore.execute_restore', return_value={"success": True})
+    mocker.patch('starrocks_br.restore._perform_atomic_rename', return_value={"success": True})
+    
+    mocker.patch('builtins.input', return_value='y')
+    
+    result = restore.execute_restore_flow(db, repo_name, restore_pair, tables_to_restore, rename_suffix)
+    
+    assert result["success"] is True
+    assert "Restore completed successfully" in result["message"]
+
+
+def test_should_execute_restore_flow_with_incremental_backup(mocker):
+    """Test executing restore flow with full + incremental backup."""
+    db = mocker.Mock()
+    repo_name = "my_repo"
+    restore_pair = ["sales_db_20251015_full", "sales_db_20251016_inc"]
+    tables_to_restore = ["sales_db.fact_sales"]
+    rename_suffix = "_restored"
+    
+    mocker.patch('starrocks_br.restore.execute_restore', return_value={"success": True})
+    mocker.patch('starrocks_br.restore._perform_atomic_rename', return_value={"success": True})
+    
+    mocker.patch('builtins.input', return_value='y')
+    
+    result = restore.execute_restore_flow(db, repo_name, restore_pair, tables_to_restore, rename_suffix)
+    
+    assert result["success"] is True
+    assert "Restore completed successfully" in result["message"]
+
+
+def test_should_cancel_restore_flow_when_user_says_no(mocker):
+    """Test that restore flow is cancelled when user says no."""
+    db = mocker.Mock()
+    repo_name = "my_repo"
+    restore_pair = ["sales_db_20251015_full"]
+    tables_to_restore = ["sales_db.fact_sales"]
+    
+    mocker.patch('builtins.input', return_value='n')
+    
+    result = restore.execute_restore_flow(db, repo_name, restore_pair, tables_to_restore)
+    
+    assert result["success"] is False
+    assert "cancelled by user" in result["error_message"]
+
+
+def test_should_fail_restore_flow_when_base_restore_fails(mocker):
+    """Test that restore flow fails when base restore fails."""
+    db = mocker.Mock()
+    repo_name = "my_repo"
+    restore_pair = ["sales_db_20251015_full"]
+    tables_to_restore = ["sales_db.fact_sales"]
+    
+    mocker.patch('starrocks_br.restore.execute_restore', return_value={
+        "success": False, 
+        "error_message": "Base restore failed"
+    })
+    
+    mocker.patch('builtins.input', return_value='y')
+    
+    result = restore.execute_restore_flow(db, repo_name, restore_pair, tables_to_restore)
+    
+    assert result["success"] is False
+    assert "Base restore failed" in result["error_message"]
+
+
+def test_should_fail_restore_flow_when_incremental_restore_fails(mocker):
+    """Test that restore flow fails when incremental restore fails."""
+    db = mocker.Mock()
+    repo_name = "my_repo"
+    restore_pair = ["sales_db_20251015_full", "sales_db_20251016_inc"]
+    tables_to_restore = ["sales_db.fact_sales"]
+    
+    def mock_execute_restore(db, command, backup_label, restore_type, repo, scope="restore"):
+        if "full" in backup_label:
+            return {"success": True}
+        else:
+            return {"success": False, "error_message": "Incremental restore failed"}
+    
+    mocker.patch('starrocks_br.restore.execute_restore', side_effect=mock_execute_restore)
+    
+    mocker.patch('builtins.input', return_value='y')
+    
+    result = restore.execute_restore_flow(db, repo_name, restore_pair, tables_to_restore)
+    
+    assert result["success"] is False
+    assert "Incremental restore failed" in result["error_message"]
+
+
+def test_should_fail_restore_flow_when_atomic_rename_fails(mocker):
+    """Test that restore flow fails when atomic rename fails."""
+    db = mocker.Mock()
+    repo_name = "my_repo"
+    restore_pair = ["sales_db_20251015_full"]
+    tables_to_restore = ["sales_db.fact_sales"]
+    
+    mocker.patch('starrocks_br.restore.execute_restore', return_value={"success": True})
+    mocker.patch('starrocks_br.restore._perform_atomic_rename', return_value={
+        "success": False, 
+        "error_message": "Atomic rename failed"
+    })
+    
+    mocker.patch('builtins.input', return_value='y')
+    
+    result = restore.execute_restore_flow(db, repo_name, restore_pair, tables_to_restore)
+    
+    assert result["success"] is False
+    assert "Atomic rename failed" in result["error_message"]
+
+
+def test_should_validate_restore_flow_inputs(mocker):
+    """Test that restore flow validates inputs properly."""
+    db = mocker.Mock()
+    repo_name = "my_repo"
+    
+    # Test empty restore pair
+    result = restore.execute_restore_flow(db, repo_name, [], ["sales_db.fact_sales"])
+    assert result["success"] is False
+    assert "No restore pair provided" in result["error_message"]
+    
+    # Test empty tables list
+    result = restore.execute_restore_flow(db, repo_name, ["sales_db_20251015_full"], [])
+    assert result["success"] is False
+    assert "No tables to restore" in result["error_message"]

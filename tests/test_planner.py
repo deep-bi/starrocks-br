@@ -306,3 +306,108 @@ def test_should_return_empty_partitions_when_no_group_tables(mocker):
     
     assert len(partitions) == 0
     assert db.query.call_count == 1
+
+
+def test_should_record_backup_partitions(mocker):
+    """Test recording partition metadata for a backup."""
+    db = mocker.Mock()
+    
+    partitions = [
+        {"database": "sales_db", "table": "fact_sales", "partition_name": "p20251015"},
+        {"database": "sales_db", "table": "fact_sales", "partition_name": "p20251014"},
+        {"database": "orders_db", "table": "fact_orders", "partition_name": "p20251015"},
+    ]
+    label = "sales_db_20251015_incremental"
+    
+    planner.record_backup_partitions(db, label, partitions)
+    
+    assert db.execute.call_count == 3
+    
+    first_call = db.execute.call_args_list[0][0][0]
+    assert "INSERT INTO ops.backup_partitions" in first_call
+    assert "label, database_name, table_name, partition_name" in first_call
+    assert "VALUES ('sales_db_20251015_incremental', 'sales_db', 'fact_sales', 'p20251015')" in first_call
+
+
+def test_should_handle_empty_partitions_list_in_record_backup_partitions(mocker):
+    """Test that record_backup_partitions handles empty partitions list gracefully."""
+    db = mocker.Mock()
+    
+    planner.record_backup_partitions(db, "test_label", [])
+    
+    db.execute.assert_not_called()
+
+
+def test_should_get_all_partitions_for_tables(mocker):
+    """Test getting all partitions for specified tables."""
+    db = mocker.Mock()
+    db.query.return_value = [
+        ("sales_db", "fact_sales", "p20251015"),
+        ("sales_db", "fact_sales", "p20251014"),
+        ("sales_db", "dim_customers", "p20251015"),
+    ]
+    
+    tables = [
+        {"database": "sales_db", "table": "fact_sales"},
+        {"database": "sales_db", "table": "dim_customers"},
+        {"database": "orders_db", "table": "fact_orders"},
+    ]
+    
+    partitions = planner.get_all_partitions_for_tables(db, "sales_db", tables)
+    
+    assert len(partitions) == 3
+    assert {"database": "sales_db", "table": "fact_sales", "partition_name": "p20251015"} in partitions
+    assert {"database": "sales_db", "table": "fact_sales", "partition_name": "p20251014"} in partitions
+    assert {"database": "sales_db", "table": "dim_customers", "partition_name": "p20251015"} in partitions
+    
+    query = db.query.call_args[0][0]
+    assert "information_schema.partitions_meta" in query
+    assert "PARTITION_NAME IS NOT NULL" in query
+
+
+def test_should_handle_wildcard_tables_in_get_all_partitions(mocker):
+    """Test getting all partitions when tables include wildcard entries."""
+    db = mocker.Mock()
+    db.query.return_value = [
+        ("sales_db", "fact_sales", "p20251015"),
+        ("sales_db", "dim_customers", "p20251015"),
+        ("sales_db", "any_other_table", "p20251015"),
+    ]
+    
+    tables = [
+        {"database": "sales_db", "table": "*"},  # Wildcard
+        {"database": "orders_db", "table": "fact_orders"},  # Specific table
+    ]
+    
+    partitions = planner.get_all_partitions_for_tables(db, "sales_db", tables)
+    
+    # Should return all partitions for sales_db (due to wildcard)
+    assert len(partitions) == 3
+    assert {"database": "sales_db", "table": "fact_sales", "partition_name": "p20251015"} in partitions
+    assert {"database": "sales_db", "table": "dim_customers", "partition_name": "p20251015"} in partitions
+    assert {"database": "sales_db", "table": "any_other_table", "partition_name": "p20251015"} in partitions
+
+
+def test_should_return_empty_list_when_no_tables_in_get_all_partitions(mocker):
+    """Test that get_all_partitions_for_tables returns empty list when no tables provided."""
+    db = mocker.Mock()
+    
+    partitions = planner.get_all_partitions_for_tables(db, "test_db", [])
+    
+    assert len(partitions) == 0
+    db.query.assert_not_called()
+
+
+def test_should_return_empty_list_when_no_tables_for_database_in_get_all_partitions(mocker):
+    """Test that get_all_partitions_for_tables returns empty when no tables for specified database."""
+    db = mocker.Mock()
+    
+    tables = [
+        {"database": "other_db", "table": "table1"},
+        {"database": "another_db", "table": "table2"},
+    ]
+    
+    partitions = planner.get_all_partitions_for_tables(db, "test_db", tables)
+    
+    assert len(partitions) == 0
+    db.query.assert_not_called()

@@ -41,6 +41,7 @@ def test_should_create_all_required_tables(mocker):
     assert any("ops.backup_history" in sql for sql in executed_sqls)
     assert any("ops.restore_history" in sql for sql in executed_sqls)
     assert any("ops.run_status" in sql for sql in executed_sqls)
+    assert any("ops.backup_partitions" in sql for sql in executed_sqls)
 
 
 def test_should_populate_table_inventory_with_sample_data(mocker):
@@ -66,6 +67,7 @@ def test_should_define_proper_table_structures():
     backup_history_schema = schema.get_backup_history_schema()
     restore_history_schema = schema.get_restore_history_schema()
     run_status_schema = schema.get_run_status_schema()
+    backup_partitions_schema = schema.get_backup_partitions_schema()
     
     assert "inventory_group" in table_inventory_schema
     assert "database_name" in table_inventory_schema
@@ -81,6 +83,11 @@ def test_should_define_proper_table_structures():
     assert "scope" in run_status_schema
     assert "label" in run_status_schema
     assert "state" in run_status_schema
+    
+    assert "label" in backup_partitions_schema
+    assert "database_name" in backup_partitions_schema
+    assert "table_name" in backup_partitions_schema
+    assert "partition_name" in backup_partitions_schema
 
 
 def test_ensure_ops_schema_when_database_does_not_exist(mocker):
@@ -117,7 +124,7 @@ def test_ensure_ops_schema_when_all_tables_exist(mocker):
     db = mocker.Mock()
     db.query.side_effect = [
         [("ops",)],
-        [("table1",), ("table2",), ("table3",), ("table4",)]
+        [("table1",), ("table2",), ("table3",), ("table4",), ("table5",)]
     ]
     mock_init = mocker.patch('starrocks_br.schema.initialize_ops_schema')
     
@@ -153,3 +160,35 @@ def test_ensure_ops_schema_when_tables_result_is_none(mocker):
     
     assert result is True
     mock_init.assert_called_once_with(db)
+
+
+def test_should_create_backup_partitions_table_with_correct_structure():
+    """Test that backup_partitions table has the correct schema structure"""
+    schema_sql = schema.get_backup_partitions_schema()
+    
+    # Check for required fields
+    assert "label STRING NOT NULL" in schema_sql
+    assert "database_name STRING NOT NULL" in schema_sql
+    assert "table_name STRING NOT NULL" in schema_sql
+    assert "partition_name STRING NOT NULL" in schema_sql
+    assert "created_at DATETIME DEFAULT CURRENT_TIMESTAMP" in schema_sql
+    
+    # Check for primary key
+    assert "PRIMARY KEY (label, database_name, table_name, partition_name)" in schema_sql
+    
+    # Check for comments
+    assert "FK to ops.backup_history.label" in schema_sql
+    assert "Tracks every partition included in a backup snapshot" in schema_sql
+
+
+def test_should_include_backup_partitions_in_initialization(mocker):
+    """Test that backup_partitions table is created during schema initialization"""
+    db = mocker.Mock()
+    
+    schema.initialize_ops_schema(db)
+    
+    executed_sqls = [call[0][0] for call in db.execute.call_args_list]
+    backup_partitions_calls = [sql for sql in executed_sqls if "ops.backup_partitions" in sql]
+    
+    assert len(backup_partitions_calls) == 1
+    assert "CREATE TABLE IF NOT EXISTS ops.backup_partitions" in backup_partitions_calls[0]

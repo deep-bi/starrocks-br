@@ -155,6 +155,8 @@ def backup_incremental(config, baseline_backup, group, name):
                 partitions, cfg['repository'], label, cfg['database']
             )
             
+            planner.record_backup_partitions(database, label, partitions)
+            
             concurrency.reserve_job_slot(database, scope='backup', label=label)
             
             logger.success(f"Job slot reserved")
@@ -251,6 +253,10 @@ def backup_full(config, group, name):
                 logger.warning(f"No tables found in group '{group}' for database '{cfg['database']}' to backup")
                 sys.exit(1)
             
+            tables = planner.find_tables_by_group(database, group)
+            all_partitions = planner.get_all_partitions_for_tables(database, cfg['database'], tables)
+            planner.record_backup_partitions(database, label, all_partitions)
+            
             concurrency.reserve_job_slot(database, scope='backup', label=label)
             
             logger.success(f"Job slot reserved")
@@ -290,25 +296,26 @@ def backup_full(config, group, name):
 
 
 
-@cli.command('restore-partition')
+@cli.command('restore')
 @click.option('--config', required=True, help='Path to config YAML file')
-@click.option('--backup-label', required=True, help='Backup label to restore from')
-@click.option('--table', required=True, help='Table name in format database.table')
-@click.option('--partition', required=True, help='Partition name to restore')
-def restore_partition(config, backup_label, table, partition):
-    """Restore a single partition from a backup.
+@click.option('--target-label', required=True, help='Backup label to restore to')
+@click.option('--group', help='Optional inventory group to filter tables to restore')
+@click.option('--rename-suffix', default='_restored', help='Suffix for temporary tables during restore (default: _restored)')
+def restore_command(config, target_label, group, rename_suffix):
+    """Restore data to a specific point in time using intelligent backup chain resolution.
     
-    Flow: load config → build restore command → execute restore → log history
+    This command automatically determines the correct sequence of backups needed for restore:
+    - For full backups: restores directly from the target backup
+    - For incremental backups: restores the base full backup first, then applies the incremental
+    
+    The restore process uses temporary tables with the specified suffix for safety, then performs
+    an atomic rename to make the restored data live.
+    
+    Flow: load config → find restore pair → get tables from backup → execute restore flow
     """
     try:
         cfg = config_module.load_config(config)
         config_module.validate_config(cfg)
-        
-        if '.' not in table:
-            logger.error(f"Table must be in format database.table")
-            sys.exit(1)
-        
-        database_name, table_name = table.split('.', 1)
         
         database = db.StarRocksDB(
             host=cfg['host'],
@@ -325,27 +332,38 @@ def restore_partition(config, backup_label, table, partition):
                 logger.warning("Remember to populate ops.table_inventory with your backup groups!")
                 sys.exit(1) # Exit if schema was just created, requires user action
             
-            logger.info(f"Restoring partition {partition} of {table} from backup {backup_label}...")
+            logger.info(f"Finding restore sequence for target backup: {target_label}")
             
-            restore_command = restore.build_partition_restore_command(
-                database=database_name,
-                table=table_name,
-                partition=partition,
-                backup_label=backup_label,
-                repository=cfg['repository']
-            )
+            try:
+                restore_pair = restore.find_restore_pair(database, target_label)
+                logger.success(f"Found restore sequence: {' -> '.join(restore_pair)}")
+            except ValueError as e:
+                logger.error(f"Failed to find restore sequence: {e}")
+                sys.exit(1)
             
-            result = restore.execute_restore(
+            logger.info("Determining tables to restore from backup manifest...")
+            tables_to_restore = restore.get_tables_from_backup(database, target_label, group)
+            
+            if not tables_to_restore:
+                if group:
+                    logger.warning(f"No tables found in backup '{target_label}' for group '{group}'")
+                else:
+                    logger.warning(f"No tables found in backup '{target_label}'")
+                sys.exit(1)
+            
+            logger.success(f"Found {len(tables_to_restore)} table(s) to restore: {', '.join(tables_to_restore)}")
+            
+            logger.info("Starting restore flow...")
+            result = restore.execute_restore_flow(
                 database,
-                restore_command,
-                backup_label=backup_label,
-                restore_type='partition',
-                repository=cfg['repository'],
-                scope='restore'
+                cfg['repository'],
+                restore_pair,
+                tables_to_restore,
+                rename_suffix
             )
             
             if result['success']:
-                logger.success(f"Restore completed successfully: {result['final_status']['state']}")
+                logger.success(result['message'])
                 sys.exit(0)
             else:
                 logger.error(f"Restore failed: {result['error_message']}")

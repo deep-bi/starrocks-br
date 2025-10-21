@@ -62,6 +62,7 @@ starrocks-br init --config config.yaml
 - Creates `ops.backup_history`: Backup operation history
 - Creates `ops.restore_history`: Restore operation history
 - Creates `ops.run_status`: Job concurrency control
+- Creates `ops.backup_partitions`: Partition manifest for each backup (enables intelligent restore)
 
 **Next step:** Populate `ops.table_inventory` with your backup groups. For example:
 ```sql
@@ -121,28 +122,41 @@ starrocks-br backup incremental --config config.yaml --group <group_name>
 
 ### Restore Commands
 
-#### Restore Single Partition
+#### Intelligent Point-in-Time Restore
 
-Restores a specific partition from a backup snapshot.
+Restores data to a specific point in time using intelligent backup chain resolution. This command automatically determines the correct sequence of backups needed for restore.
 
 ```bash
-starrocks-br restore-partition \
+starrocks-br restore \
   --config config.yaml \
-  --backup-label my_db_20251016_inc \
-  --table my_db.fact_sales \
-  --partition p20251016
+  --target-label my_db_20251016_inc \
+  --group daily_facts \
+  --rename-suffix _restored
 ```
 
 **Parameters:**
-- `--backup-label`: The snapshot label to restore from
-- `--table`: Fully qualified table name (database.table)
-- `--partition`: Partition name to restore
+- `--config`: Path to config YAML file (required)
+- `--target-label`: Backup label to restore to (required)
+- `--group`: Optional inventory group to filter tables to restore
+- `--rename-suffix`: Suffix for temporary tables during restore (default: `_restored`)
+
+**How it works:**
+- **For full backups**: Restores directly from the target backup
+- **For incremental backups**: Automatically restores the base full backup first, then applies the incremental
+- **Safety mechanism**: Uses temporary tables with the specified suffix, then performs atomic rename to make restored data live
+
+**Two Restore Modes:**
+- **Disaster Recovery**: Restore all tables from a backup (omit `--group` parameter)
+- **Surgical Restore**: Restore only specific table groups (use `--group` parameter)
+
+**Purpose of `--rename-suffix`:**
+The restore process creates temporary tables with the specified suffix (e.g., `table_restored`) to avoid conflicts with existing tables. Once the restore is complete and verified, the tool performs atomic renames to swap the original tables with the restored data. This ensures data safety and allows for rollback if needed.
 
 **Flow:**
-1. Load config
-2. Build `RESTORE SNAPSHOT ... ON (TABLE ... PARTITION (...))` command
-3. Execute restore
-4. Poll `SHOW RESTORE` until completion
+1. Load config → verify cluster health → ensure repository exists
+2. Find the correct restore sequence (full backup + optional incremental)
+3. Get tables from backup manifest (optionally filtered by group)
+4. Execute restore flow with atomic renames
 5. Log to `ops.restore_history`
 
 ## Example Usage Scenarios
@@ -175,15 +189,19 @@ VALUES
 0 1 * * 0 cd /path/to/starrocks-br && source .venv/bin/activate && starrocks-br backup full --config config.yaml --group weekly_full
 ```
 
-### Disaster Recovery - Restore Recent Partition
+### Disaster Recovery - Point-in-Time Restore
 
 ```bash
-# Restore yesterday's partition from incremental backup
-starrocks-br restore-partition \
+# Restore to a specific backup point (automatically handles full + incremental chain)
+starrocks-br restore \
   --config config.yaml \
-  --backup-label sales_db_20251015_inc \
-  --table sales_db.fact_sales \
-  --partition p20251015
+  --target-label sales_db_20251015_inc \
+  --group daily_facts
+
+# Restore all tables from a full backup
+starrocks-br restore \
+  --config config.yaml \
+  --target-label sales_db_20251014_full
 ```
 
 ## Error Handling
@@ -252,8 +270,10 @@ pytest tests/test_cli.py -v
 - Schema initialization (ops tables) with auto-creation
 - Backup & restore history logging
 - Backup executor with polling
-- Restore operations with polling
-- CLI commands (init, backup full, backup incremental, restore-partition)
+- Intelligent point-in-time restore with automatic backup chain resolution
+- Partition metadata tracking for backup manifests
+- Atomic table rename for safe restore operations
+- CLI commands (init, backup full, backup incremental, restore)
 
 📋 **Optional (deferred):**
 - Exponential backoff retry for job conflicts

@@ -143,6 +143,9 @@ def test_should_run_full_backup_with_valid_config(config_file, mock_db, setup_co
     runner = CliRunner()
     
     mocker.patch('starrocks_br.planner.build_full_backup_command', return_value='BACKUP DATABASE test_db SNAPSHOT test_db_20251016_full TO test_repo')
+    mocker.patch('starrocks_br.planner.find_tables_by_group', return_value=[{'database': 'test_db', 'table': 'dim_customers'}])
+    mocker.patch('starrocks_br.planner.get_all_partitions_for_tables', return_value=[])
+    mocker.patch('starrocks_br.planner.record_backup_partitions')
     mocker.patch('starrocks_br.labels.determine_backup_label', return_value='test_db_20251016_full')
     mocker.patch('starrocks_br.executor.execute_backup', return_value={
         'success': True,
@@ -161,6 +164,9 @@ def test_should_run_full_backup_with_wildcard_group(config_file, mock_db, setup_
     runner = CliRunner()
     
     mocker.patch('starrocks_br.planner.build_full_backup_command', return_value='BACKUP DATABASE test_db SNAPSHOT test_db_20251016_full TO test_repo')
+    mocker.patch('starrocks_br.planner.find_tables_by_group', return_value=[{'database': 'test_db', 'table': '*'}])
+    mocker.patch('starrocks_br.planner.get_all_partitions_for_tables', return_value=[])
+    mocker.patch('starrocks_br.planner.record_backup_partitions')
     mocker.patch('starrocks_br.labels.determine_backup_label', return_value='test_db_20251016_full')
     mocker.patch('starrocks_br.executor.execute_backup', return_value={
         'success': True,
@@ -174,23 +180,23 @@ def test_should_run_full_backup_with_wildcard_group(config_file, mock_db, setup_
     assert 'Backup completed successfully' in result.output
 
 
-def test_should_run_restore_partition_with_valid_parameters(config_file, mock_db, setup_password_env, mocker):
-    """Test restore partition command."""
+def test_should_run_restore_with_valid_parameters(config_file, mock_db, setup_password_env, mocker):
+    """Test restore command."""
     runner = CliRunner()
     
     mocker.patch('starrocks_br.schema.ensure_ops_schema', return_value=False)
-    mocker.patch('starrocks_br.restore.build_partition_restore_command', return_value='RESTORE SNAPSHOT test_backup FROM test_repo')
-    mocker.patch('starrocks_br.restore.execute_restore', return_value={
+    mocker.patch('starrocks_br.restore.find_restore_pair', return_value=['test_backup'])
+    mocker.patch('starrocks_br.restore.get_tables_from_backup', return_value=['test_db.fact_table'])
+    mocker.patch('starrocks_br.restore.execute_restore_flow', return_value={
         'success': True,
-        'final_status': {'state': 'FINISHED'},
-        'error_message': None
+        'message': 'Restore completed successfully. Restored 1 tables.'
     })
+    mocker.patch('builtins.input', return_value='y')
     
-    result = runner.invoke(cli.restore_partition, [
+    result = runner.invoke(cli.cli, [
+        'restore',
         '--config', config_file,
-        '--backup-label', 'test_backup',
-        '--table', 'test_db.fact_table',
-        '--partition', 'p20251016'
+        '--target-label', 'test_backup'
     ])
     
     assert result.exit_code == 0
@@ -198,10 +204,10 @@ def test_should_run_restore_partition_with_valid_parameters(config_file, mock_db
 
 
 def test_should_fail_restore_when_missing_required_parameters(config_file, setup_password_env):
-    """Test that restore partition fails when required parameters are missing."""
+    """Test that restore fails when required parameters are missing."""
     runner = CliRunner()
     
-    result = runner.invoke(cli.restore_partition, ['--config', config_file])
+    result = runner.invoke(cli.cli, ['restore', '--config', config_file])
     
     assert result.exit_code != 0
 
@@ -294,19 +300,28 @@ def test_full_backup_with_no_tables_warning(config_file, mock_db, setup_common_m
     assert 'No tables found in group' in result.output
 
 
-def test_restore_partition_invalid_table_format_error(config_file, setup_password_env):
-    """Test restore partition with invalid table format"""
+def test_restore_with_group_filter(config_file, mock_db, setup_password_env, mocker):
+    """Test restore command with group filter."""
     runner = CliRunner()
     
-    result = runner.invoke(cli.restore_partition, [
+    mocker.patch('starrocks_br.schema.ensure_ops_schema', return_value=False)
+    mocker.patch('starrocks_br.restore.find_restore_pair', return_value=['test_backup'])
+    mocker.patch('starrocks_br.restore.get_tables_from_backup', return_value=['test_db.fact_table'])
+    mocker.patch('starrocks_br.restore.execute_restore_flow', return_value={
+        'success': True,
+        'message': 'Restore completed successfully. Restored 1 tables.'
+    })
+    mocker.patch('builtins.input', return_value='y')
+    
+    result = runner.invoke(cli.cli, [
+        'restore',
         '--config', config_file,
-        '--backup-label', 'test_backup',
-        '--table', 'invalid_table_format',  # Missing database prefix
-        '--partition', 'p20251016'
+        '--target-label', 'test_backup',
+        '--group', 'daily_incremental'
     ])
     
-    assert result.exit_code == 1
-    assert 'Table must be in format database.table' in result.output
+    assert result.exit_code == 0
+    assert 'Restore completed successfully' in result.output
 
 
 def test_cli_exception_handling_file_not_found():
@@ -474,6 +489,9 @@ def test_should_show_critical_warning_on_lost_full_backup(config_file, mock_db, 
     runner = CliRunner()
     
     mocker.patch('starrocks_br.planner.build_full_backup_command', return_value='BACKUP DATABASE test_db SNAPSHOT test_db_20251016_full TO test_repo')
+    mocker.patch('starrocks_br.planner.find_tables_by_group', return_value=[{'database': 'test_db', 'table': 'dim_customers'}])
+    mocker.patch('starrocks_br.planner.get_all_partitions_for_tables', return_value=[])
+    mocker.patch('starrocks_br.planner.record_backup_partitions')
     mocker.patch('starrocks_br.labels.determine_backup_label', return_value='test_db_20251016_full')
     mocker.patch('starrocks_br.executor.execute_backup', return_value={
         'success': False,
