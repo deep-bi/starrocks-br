@@ -1,4 +1,5 @@
 from typing import Dict, Optional
+from . import logger
 
 
 def log_backup(db, entry: Dict[str, Optional[str]]) -> None:
@@ -35,7 +36,12 @@ def log_backup(db, entry: Dict[str, Optional[str]]) -> None:
         {esc(started_at)}, {esc(finished_at)}, {esc(error_message)}
     )
     """
-    db.execute(sql)
+    
+    try:
+        db.execute(sql)
+    except Exception as e:
+        logger.error(f"Failed to log backup history: {str(e)}")
+        raise
 
 
 def log_restore(db, entry: Dict[str, Optional[str]]) -> None:
@@ -77,6 +83,11 @@ def log_restore(db, entry: Dict[str, Optional[str]]) -> None:
         {esc(error_message)}, {esc(verification_checksum)}
     )
     """
-    db.execute(sql)
+
+    try:
+        db.execute(sql)
+    except Exception as e:
+        logger.error(f"Failed to log restore history: {str(e)}")
+        raise
 
 

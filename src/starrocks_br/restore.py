@@ -1,4 +1,5 @@
 import time
+import datetime
 from typing import Dict, List, Optional
 from . import history, concurrency, logger
 
@@ -165,9 +166,12 @@ def execute_restore(
     
     Returns dictionary with keys: success, final_status, error_message
     """
+    started_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
     try:
         db.execute(restore_command.strip())
     except Exception as e:
+        logger.error(f"Failed to submit restore command: {str(e)}")
         return {
             "success": False,
             "final_status": None,
@@ -180,6 +184,7 @@ def execute_restore(
         final_status = poll_restore_status(db, label, database, max_polls, poll_interval)
         
         success = final_status["state"] == "FINISHED"
+        finished_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         try:
             history.log_restore(
@@ -190,18 +195,18 @@ def execute_restore(
                     "restore_type": restore_type,
                     "status": final_status["state"],
                     "repository": repository,
-                    "started_at": None,
-                    "finished_at": None,
+                    "started_at": started_at,
+                    "finished_at": finished_at,
                     "error_message": None if success else final_status["state"],
                 },
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"Failed to log restore history: {str(e)}")
         
         try:
             concurrency.complete_job_slot(db, scope=scope, label=label, final_state=final_status["state"])
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"Failed to complete job slot: {str(e)}")
         
         return {
             "success": success,
@@ -210,6 +215,7 @@ def execute_restore(
         }
         
     except Exception as e:
+        logger.error(f"Restore execution failed: {str(e)}")
         return {
             "success": False,
             "final_status": None,
