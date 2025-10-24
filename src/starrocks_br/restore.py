@@ -4,18 +4,54 @@ from . import history, concurrency, logger
 
 MAX_POLLS = 21600 # 6 hours
 
+def get_snapshot_timestamp(db, repo_name: str, snapshot_name: str) -> str:
+    """Get the backup timestamp for a specific snapshot from the repository.
+    
+    Args:
+        db: Database connection
+        repo_name: Repository name
+        snapshot_name: Snapshot name to look up
+        
+    Returns:
+        The backup timestamp string
+        
+    Raises:
+        ValueError: If snapshot is not found in the repository
+    """
+    query = f"SHOW SNAPSHOT ON {repo_name} WHERE Snapshot = '{snapshot_name}'"
+    
+    rows = db.query(query)
+    if not rows:
+        raise ValueError(f"Snapshot '{snapshot_name}' not found in repository '{repo_name}'")
+    
+    # The result should be a single row with columns: Snapshot, Timestamp, Status
+    result = rows[0]
+    
+    if isinstance(result, dict):
+        timestamp = result.get("Timestamp")
+    else:
+        timestamp = result[1] if len(result) > 1 else None
+    
+    if not timestamp:
+        raise ValueError(f"Could not extract timestamp for snapshot '{snapshot_name}'")
+    
+    return timestamp
+
+
 def build_partition_restore_command(
     database: str,
     table: str,
     partition: str,
     backup_label: str,
     repository: str,
+    backup_timestamp: str,
 ) -> str:
     """Build RESTORE command for single partition recovery."""
-    return f"""
-    RESTORE SNAPSHOT {backup_label}
+    return f"""RESTORE SNAPSHOT {backup_label}
     FROM {repository}
-    ON (TABLE {database}.{table} PARTITION ({partition}))"""
+    DATABASE {database}
+    ON (TABLE {table} PARTITION ({partition}))
+    PROPERTIES ("backup_timestamp" = "{backup_timestamp}")"""
 
 
 def build_table_restore_command(
@@ -23,48 +59,87 @@ def build_table_restore_command(
     table: str,
     backup_label: str,
     repository: str,
+    backup_timestamp: str,
 ) -> str:
     """Build RESTORE command for full table recovery."""
-    return f"""
-    RESTORE SNAPSHOT {backup_label}
+    return f"""RESTORE SNAPSHOT {backup_label}
     FROM {repository}
-    ON (TABLE {database}.{table})"""
+    DATABASE {database}
+    ON (TABLE {table})
+    PROPERTIES ("backup_timestamp" = "{backup_timestamp}")"""
 
 
 def build_database_restore_command(
     database: str,
     backup_label: str,
     repository: str,
+    backup_timestamp: str,
 ) -> str:
     """Build RESTORE command for full database recovery."""
-    return f"""
-    RESTORE DATABASE {database}
+    return f"""RESTORE SNAPSHOT {backup_label}
     FROM {repository}
-    SNAPSHOT {backup_label}"""
+    DATABASE {database}
+    PROPERTIES ("backup_timestamp" = "{backup_timestamp}")"""
 
 
-def poll_restore_status(db, label: str, max_polls: int = MAX_POLLS, poll_interval: float = 1.0) -> Dict[str, str]:
+def poll_restore_status(db, label: str, database: str, max_polls: int = MAX_POLLS, poll_interval: float = 1.0) -> Dict[str, str]:
     """Poll restore status until completion or timeout.
     
+    Note: SHOW RESTORE only returns the LAST restore in a database.
+    We verify that the Label matches our expected label.
+    
+    Important: If we see a different label, it means another restore
+    operation overwrote ours and we've lost tracking (race condition).
+    
+    Args:
+        db: Database connection
+        label: Expected snapshot label to monitor
+        database: Database name where restore was submitted
+        max_polls: Maximum number of polling attempts
+        poll_interval: Seconds to wait between polls
+    
     Returns dictionary with keys: state, label
+    Possible states: FINISHED, CANCELLED, TIMEOUT, ERROR, LOST
     """
-    query = f"SHOW RESTORE WHERE label = '{label}'"
+    query = f"SHOW RESTORE FROM {database}"
+    first_poll = True
+    last_state = None
+    poll_count = 0
     
     for _ in range(max_polls):
+        poll_count += 1
         try:
             rows = db.query(query)
             
             if not rows:
-                return {"state": "UNKNOWN", "label": label}
+                time.sleep(poll_interval)
+                continue
             
             result = rows[0]
             
             if isinstance(result, dict):
-                state = result.get("state", "UNKNOWN")
+                snapshot_label = result.get("Label", "")
+                state = result.get("State", "UNKNOWN")
             else:
-                state = result[1] if len(result) > 1 else "UNKNOWN"
+                # Tuple format: JobId, Label, Timestamp, DbName, State, ...
+                snapshot_label = result[1] if len(result) > 1 else ""
+                state = result[4] if len(result) > 4 else "UNKNOWN"
             
-            if state in ["FINISHED", "FAILED", "CANCELLED", "UNKNOWN"]:
+            if snapshot_label != label and snapshot_label:
+                if first_poll:
+                    first_poll = False
+                    time.sleep(poll_interval)
+                    continue
+                else:
+                    return {"state": "LOST", "label": label}
+            
+            first_poll = False
+            
+            if state != last_state or poll_count % 10 == 0:
+                logger.progress(f"Restore status: {state} (poll {poll_count}/{max_polls})")
+                last_state = state
+            
+            if state in ["FINISHED", "CANCELLED", "UNKNOWN"]:
                 return {"state": state, "label": label}
             
             time.sleep(poll_interval)
@@ -81,6 +156,7 @@ def execute_restore(
     backup_label: str,
     restore_type: str,
     repository: str,
+    database: str,
     max_polls: int = MAX_POLLS,
     poll_interval: float = 1.0,
     scope: str = "restore",
@@ -101,7 +177,7 @@ def execute_restore(
     label = backup_label
     
     try:
-        final_status = poll_restore_status(db, label, max_polls, poll_interval)
+        final_status = poll_restore_status(db, label, database, max_polls, poll_interval)
         
         success = final_status["state"] == "FINISHED"
         
@@ -284,16 +360,20 @@ def execute_restore_flow(db, repo_name: str, restore_pair: List[str], tables_to_
         }
     
     try:
+        database_name = tables_to_restore[0].split('.')[0]
+        
         base_label = restore_pair[0]
         logger.info("")
         logger.info(f"Step 1: Restoring base backup '{base_label}'...")
         
+        base_timestamp = get_snapshot_timestamp(db, repo_name, base_label)
+        
         base_restore_command = _build_restore_command_with_rename(
-            base_label, repo_name, tables_to_restore, rename_suffix
+            base_label, repo_name, tables_to_restore, rename_suffix, database_name, base_timestamp
         )
         
         base_result = execute_restore(
-            db, base_restore_command, base_label, "full", repo_name, scope="restore"
+            db, base_restore_command, base_label, "full", repo_name, database_name, scope="restore"
         )
         
         if not base_result["success"]:
@@ -309,12 +389,14 @@ def execute_restore_flow(db, repo_name: str, restore_pair: List[str], tables_to_
             logger.info("")
             logger.info(f"Step 2: Applying incremental backup '{incremental_label}'...")
             
+            incremental_timestamp = get_snapshot_timestamp(db, repo_name, incremental_label)
+            
             incremental_restore_command = _build_restore_command_without_rename(
-                incremental_label, repo_name, tables_to_restore
+                incremental_label, repo_name, tables_to_restore, database_name, incremental_timestamp
             )
             
             incremental_result = execute_restore(
-                db, incremental_restore_command, incremental_label, "incremental", repo_name, scope="restore"
+                db, incremental_restore_command, incremental_label, "incremental", repo_name, database_name, scope="restore"
             )
             
             if not incremental_result["success"]:
@@ -349,11 +431,11 @@ def execute_restore_flow(db, repo_name: str, restore_pair: List[str], tables_to_
         }
 
 
-def _build_restore_command_with_rename(backup_label: str, repo_name: str, tables: List[str], rename_suffix: str) -> str:
+def _build_restore_command_with_rename(backup_label: str, repo_name: str, tables: List[str], rename_suffix: str, database: str, backup_timestamp: str) -> str:
     """Build restore command with AS clause for temporary table names."""
     table_clauses = []
     for table in tables:
-        database, table_name = table.split('.', 1)
+        _, table_name = table.split('.', 1)
         temp_table_name = f"{table_name}{rename_suffix}"
         table_clauses.append(f"TABLE {table_name} AS {temp_table_name}")
     
@@ -361,21 +443,25 @@ def _build_restore_command_with_rename(backup_label: str, repo_name: str, tables
     
     return f"""RESTORE SNAPSHOT {backup_label}
     FROM {repo_name}
-    ON ({on_clause})"""
+    DATABASE {database}
+    ON ({on_clause})
+    PROPERTIES ("backup_timestamp" = "{backup_timestamp}")"""
 
 
-def _build_restore_command_without_rename(backup_label: str, repo_name: str, tables: List[str]) -> str:
+def _build_restore_command_without_rename(backup_label: str, repo_name: str, tables: List[str], database: str, backup_timestamp: str) -> str:
     """Build restore command without AS clause (for incremental restores to existing temp tables)."""
     table_clauses = []
     for table in tables:
-        database, table_name = table.split('.', 1)
+        _, table_name = table.split('.', 1)
         table_clauses.append(f"TABLE {table_name}")
     
     on_clause = ",\n    ".join(table_clauses)
     
     return f"""RESTORE SNAPSHOT {backup_label}
     FROM {repo_name}
-    ON ({on_clause})"""
+    DATABASE {database}
+    ON ({on_clause})
+    PROPERTIES ("backup_timestamp" = "{backup_timestamp}")"""
 
 
 def _perform_atomic_rename(db, tables: List[str], rename_suffix: str) -> Dict:
@@ -386,8 +472,8 @@ def _perform_atomic_rename(db, tables: List[str], rename_suffix: str) -> Dict:
             database, table_name = table.split('.', 1)
             temp_table_name = f"{table_name}{rename_suffix}"
             
-            rename_statements.append(f"RENAME TABLE {database}.{table_name} TO {database}.{table_name}_backup")
-            rename_statements.append(f"RENAME TABLE {database}.{temp_table_name} TO {database}.{table_name}")
+            rename_statements.append(f"ALTER TABLE {database}.{table_name} RENAME {table_name}_backup")
+            rename_statements.append(f"ALTER TABLE {database}.{temp_table_name} RENAME {table_name}")
         
         for statement in rename_statements:
             db.execute(statement)
