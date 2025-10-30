@@ -6,7 +6,21 @@ The StarRocks Backup & Restore tool provides production-grade automation for bac
 
 ## Installation
 
-### Option 1: Using Devbox (Recommended for Development)
+### Option 1: Install from PyPI (Recommended for Production)
+
+Install the package from PyPI using pip:
+
+```bash
+pip install starrocks-br==0.1.0
+```
+
+Verify the installation:
+
+```bash
+starrocks-br --help
+```
+
+### Option 2: Using Devbox (Recommended for Development)
 
 Devbox provides a reproducible development environment with all required tools.
 
@@ -26,18 +40,51 @@ starrocks-br --help
 pytest
 ```
 
-### Option 2: Manual Setup
+### Option 3: Manual Development Setup
 
 ```bash
-# Activate virtual environment
+# Clone the repository
+git clone <repository-url>
+cd starrocks-br
+
+# Create and activate virtual environment
+python3 -m venv .venv
 source .venv/bin/activate
 
-# The CLI is already installed as: starrocks-br
+# Install in editable mode with development dependencies
+pip install -e ".[dev]"
+
+# The CLI is now available as: starrocks-br
 ```
+
+## Quick Start
+
+After installing from PyPI, follow these steps:
+
+1. **Verify installation:**
+   ```bash
+   starrocks-br --help
+   ```
+
+2. **Create your `config.yaml` file** (see Configuration section below)
+
+3. **Set your password as an environment variable:**
+   ```bash
+   export STARROCKS_PASSWORD="your_password"
+   ```
+
+4. **Initialize the ops schema:**
+   ```bash
+   starrocks-br init --config config.yaml
+   ```
+
+5. **Start using the tool** - see Commands section below for details
 
 ## Configuration
 
-Create a `config.yaml` file with your StarRocks connection details:
+**Important:** After installing the package, you need to create your own `config.yaml` file. This file is **not included in the package** - each user creates it with their own StarRocks connection details. You can place it anywhere and reference it using the `--config` parameter.
+
+Create a `config.yaml` file in your working directory (or any location you prefer) with your StarRocks connection details:
 
 ```yaml
 host: "127.0.0.1"
