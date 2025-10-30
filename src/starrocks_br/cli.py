@@ -1,149 +1,385 @@
-from __future__ import annotations
-
-import sys
-import logging
-from pathlib import Path
-from typing import List, Optional
-
 import click
-
-from .config import load_config
-from .db import Database
-from .backup import run_backup
-from .restore import run_restore
-
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S"
-)
-logger = logging.getLogger(__name__)
-
-
-@click.group(no_args_is_help=False)
-@click.version_option(version="0.1.0", prog_name="starrocks-bbr")
-def cli() -> None:
-    """StarRocks backup and restore CLI (MVP)."""
+import os
+import sys
+from datetime import datetime
+from . import config as config_module
+from . import db
+from . import health
+from . import repository
+from . import concurrency
+from . import planner
+from . import labels
+from . import executor
+from . import restore
+from . import schema
+from . import logger
 
 
-def _config_option(f):
-    return click.option("--config", "config_path", type=click.Path(exists=True, path_type=Path), required=True)(f)
+@click.group()
+def cli():
+    """StarRocks Backup & Restore automation tool."""
+    pass
 
 
-@cli.command()
-@_config_option
-def init(config_path: Path) -> None:
-    """Create metadata table."""
-    logger.info("initializing metadata structures...")
-    cfg = load_config(config_path)
+@cli.command('init')
+@click.option('--config', required=True, help='Path to config YAML file')
+def init(config):
+    """Initialize ops database and control tables.
     
-    logger.info(f"connecting to StarRocks at {cfg.host}:{cfg.port}")
-    db = Database(host=cfg.host, port=cfg.port, user=cfg.user, password=cfg.password, database=cfg.database)
-
-    create_db_sql = "CREATE DATABASE IF NOT EXISTS ops"
-    create_table_sql = """
-    CREATE TABLE IF NOT EXISTS ops.backup_history (
-        id BIGINT AUTO_INCREMENT PRIMARY KEY,
-        backup_type VARCHAR(16) NOT NULL,
-        status VARCHAR(16) NOT NULL,
-        start_time DATETIME NOT NULL,
-        end_time DATETIME,
-        snapshot_label VARCHAR(255) NOT NULL,
-        backup_timestamp DATETIME NULL,
-        database_name VARCHAR(128) NOT NULL,
-        table_name VARCHAR(128) NULL,
-        partitions_json STRING,
-        error_message STRING
-    )
-    PRIMARY KEY (id)
+    Creates the ops database with required tables:
+    - ops.table_inventory: Inventory groups mapping to databases/tables
+    - ops.backup_history: Backup operation history
+    - ops.restore_history: Restore operation history
+    - ops.run_status: Job concurrency control
+    
+    Run this once before using backup/restore commands.
     """
-
-    logger.info("creating database 'ops' if not exists")
-    db.execute(create_db_sql)
-    logger.info("creating table 'ops.backup_history' if not exists")
-    db.execute(create_table_sql)
-    click.echo("✓ init: metadata structures created successfully")
-
-
-@cli.command()
-@_config_option
-def backup(config_path: Path) -> None:
-    """Run backup workflow automatically."""
-    logger.info("starting backup workflow...")
-    cfg = load_config(config_path)
-    
-    logger.info(f"connecting to StarRocks at {cfg.host}:{cfg.port}")
-    logger.info(f"target database: {cfg.database}")
-    logger.info(f"repository: {cfg.repository}")
-    logger.info(f"tables to backup: {', '.join(cfg.tables)}")
-    
-    db = Database(host=cfg.host, port=cfg.port, user=cfg.user, password=cfg.password, database=cfg.database)
-    run_backup(db, cfg.tables, cfg.repository)
-    click.echo("✓ backup: completed successfully")
-
-
-@cli.command()
-@_config_option
-def list(config_path: Path) -> None:
-    """Show backup history."""
-    logger.info("fetching backup history...")
-    cfg = load_config(config_path)
-    db = Database(host=cfg.host, port=cfg.port, user=cfg.user, password=cfg.password, database=cfg.database)
-    rows = db.query(
-        "SELECT id, backup_type, status, start_time, end_time, snapshot_label, backup_timestamp, database_name, table_name FROM ops.backup_history ORDER BY id"
-    )
-
-    if not rows:
-        click.echo("no backup history found")
-        return
-
-    headers = ["ID", "TYPE", "STATUS", "START", "END", "LABEL", "TS", "DB", "TABLE"]
-    click.echo("\t".join(headers))
-    for r in rows:
-        click.echo("\t".join(str(x) if x is not None else "" for x in r))
-
-
-@cli.command()
-@_config_option
-@click.option("--table", "table_name", required=True, type=str)
-@click.option("--timestamp", "timestamp_str", required=True, type=str)
-def restore(config_path: Path, table_name: str, timestamp_str: str) -> None:
-    """Perform point-in-time recovery of a single table."""
-    logger.info("starting restore workflow...")
-    logger.info(f"target table: {table_name}")
-    logger.info(f"target timestamp: {timestamp_str}")
-    
-    cfg = load_config(config_path)
-    logger.info(f"connecting to StarRocks at {cfg.host}:{cfg.port}")
-    logger.info(f"repository: {cfg.repository}")
-    
-    db = Database(host=cfg.host, port=cfg.port, user=cfg.user, password=cfg.password, database=cfg.database)
     try:
-        run_restore(db, table_name, timestamp_str, cfg.repository)
+        cfg = config_module.load_config(config)
+        config_module.validate_config(cfg)
+        
+        database = db.StarRocksDB(
+            host=cfg['host'],
+            port=cfg['port'],
+            user=cfg['user'],
+            password=os.getenv('STARROCKS_PASSWORD'),
+            database=cfg['database']
+        )
+        
+        with database:
+            logger.info("Initializing ops schema...")
+            schema.initialize_ops_schema(database)
+            logger.info("")
+            logger.info("Next steps:")
+            logger.info("1. Insert your table inventory records:")
+            logger.info("   INSERT INTO ops.table_inventory")
+            logger.info("   (inventory_group, database_name, table_name)")
+            logger.info("   VALUES ('my_daily_incremental', 'your_db', 'your_fact_table');")
+            logger.info("   VALUES ('my_full_database_backup', 'your_db', '*');")
+            logger.info("   VALUES ('my_full_dimension_tables', 'your_db', 'dim_customers');")
+            logger.info("   VALUES ('my_full_dimension_tables', 'your_db', 'dim_products');")
+            logger.info("")
+            logger.info("2. Run your first backup:")
+            logger.info("   starrocks-br backup incremental --group my_daily_incremental --config config.yaml")
+            
+    except FileNotFoundError as e:
+        logger.error(f"Config file not found: {e}")
+        sys.exit(1)
+    except ValueError as e:
+        logger.error(f"Configuration error: {e}")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Failed to initialize schema: {e}")
+        sys.exit(1)
+
+
+@cli.group()
+def backup():
+    """Backup commands."""
+    pass
+
+
+@backup.command('incremental')
+@click.option('--config', required=True, help='Path to config YAML file')
+@click.option('--baseline-backup', help='Specific backup label to use as baseline (optional). If not provided, uses the latest successful full backup.')
+@click.option('--group', required=True, help='Inventory group to backup from table_inventory. Supports wildcard \'*\'.')
+@click.option('--name', help='Optional logical name (label) for the backup. Supports -v#r placeholder for auto-versioning.')
+def backup_incremental(config, baseline_backup, group, name):
+    """Run incremental backup of partitions changed since the latest full backup.
+    
+    By default, uses the latest successful full backup as baseline.
+    Optionally specify a specific backup label to use as baseline.
+    
+    Flow: load config → check health → ensure repository → reserve job slot →
+    find baseline backup → find recent partitions → generate label → build backup command → execute backup
+    """
+    try:
+        cfg = config_module.load_config(config)
+        config_module.validate_config(cfg)
+        
+        database = db.StarRocksDB(
+            host=cfg['host'],
+            port=cfg['port'],
+            user=cfg['user'],
+            password=os.getenv('STARROCKS_PASSWORD'),
+            database=cfg['database']
+        )
+        
+        with database:
+            was_created = schema.ensure_ops_schema(database)
+            if was_created:
+                logger.warning("ops schema was auto-created. Please run 'starrocks-br init' after populating config.")
+                logger.warning("Remember to populate ops.table_inventory with your backup groups!")
+                sys.exit(1) # Exit if schema was just created, requires user action
+            
+            healthy, message = health.check_cluster_health(database)
+            if not healthy:
+                logger.error(f"Cluster health check failed: {message}")
+                sys.exit(1)
+            
+            logger.success(f"Cluster health: {message}")
+            
+            repository.ensure_repository(database, cfg['repository'])
+            
+            logger.success(f"Repository '{cfg['repository']}' verified")
+            
+            label = labels.determine_backup_label(
+                db=database,
+                backup_type='incremental',
+                database_name=cfg['database'],
+                custom_name=name
+            )
+            
+            logger.success(f"Generated label: {label}")
+            
+            if baseline_backup:
+                logger.success(f"Using specified baseline backup: {baseline_backup}")
+            else:
+                latest_backup = planner.find_latest_full_backup(database, cfg['database'])
+                if latest_backup:
+                    logger.success(f"Using latest full backup as baseline: {latest_backup['label']} ({latest_backup['backup_type']})")
+                else:
+                    logger.warning("No full backup found - this will be the first incremental backup")
+            
+            partitions = planner.find_recent_partitions(
+                database, cfg['database'], baseline_backup_label=baseline_backup, group_name=group
+            )
+            
+            if not partitions:
+                logger.warning("No partitions found to backup")
+                sys.exit(1)
+            
+            logger.success(f"Found {len(partitions)} partition(s) to backup")
+            
+            backup_command = planner.build_incremental_backup_command(
+                partitions, cfg['repository'], label, cfg['database']
+            )
+            
+            planner.record_backup_partitions(database, label, partitions)
+            
+            concurrency.reserve_job_slot(database, scope='backup', label=label)
+            
+            logger.success(f"Job slot reserved")
+            logger.info(f"Starting incremental backup for group '{group}'...")
+            result = executor.execute_backup(
+                database,
+                backup_command,
+                repository=cfg['repository'],
+                backup_type='incremental',
+                scope='backup',
+                database=cfg['database']
+            )
+            
+            if result['success']:
+                logger.success(f"Backup completed successfully: {result['final_status']['state']}")
+                sys.exit(0)
+            else:
+                state = result.get('final_status', {}).get('state', 'UNKNOWN')
+                if state == "LOST":
+                    logger.critical("Backup tracking lost!")
+                    logger.warning("Another backup operation started during ours.")
+                    logger.tip("Enable ops.run_status concurrency checks to prevent this.")
+                logger.error(f"{result['error_message']}")
+                sys.exit(1)
+                
+    except FileNotFoundError as e:
+        logger.error(f"Config file not found: {e}")
+        sys.exit(1)
+    except ValueError as e:
+        logger.error(f"Configuration error: {e}")
+        sys.exit(1)
     except RuntimeError as e:
-        raise click.ClickException(f"error: {e}")
-    click.echo(f"✓ restore: completed successfully for table={table_name} at ts={timestamp_str}")
+        logger.error(f"{e}")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        sys.exit(1)
 
 
-def main(argv: Optional[List[str]] = None) -> int:
-    argv = [] if argv is None else argv
+@backup.command('full')
+@click.option('--config', required=True, help='Path to config YAML file')
+@click.option('--group', required=True, help='Inventory group to backup from table_inventory. Supports wildcard \'*\'.')
+@click.option('--name', help='Optional logical name (label) for the backup. Supports -v#r placeholder for auto-versioning.')
+def backup_full(config, group, name):
+    """Run a full backup for a specified inventory group.
+    
+    Flow: load config → check health → ensure repository → reserve job slot →
+    find tables by group → generate label → build backup command → execute backup
+    """
     try:
-        if not argv:
-            with click.Context(cli) as ctx:
-                click.echo(cli.get_help(ctx))
-            return 0
-        cli(standalone_mode=False, args=argv)
-        return 0
-    except click.exceptions.NoSuchOption as e:
-        click.echo(f"Error: {e}", err=True)
-        return 2
-    except click.ClickException as e:
-        e.show()
-        return 2
-    except SystemExit as exc:
-        return int(exc.code)
+        cfg = config_module.load_config(config)
+        config_module.validate_config(cfg)
+        
+        database = db.StarRocksDB(
+            host=cfg['host'],
+            port=cfg['port'],
+            user=cfg['user'],
+            password=os.getenv('STARROCKS_PASSWORD'),
+            database=cfg['database']
+        )
+        
+        with database:
+            was_created = schema.ensure_ops_schema(database)
+            if was_created:
+                logger.warning("ops schema was auto-created. Please run 'starrocks-br init' after populating config.")
+                logger.warning("Remember to populate ops.table_inventory with your backup groups!")
+                sys.exit(1) # Exit if schema was just created, requires user action
+            
+            healthy, message = health.check_cluster_health(database)
+            if not healthy:
+                logger.error(f"Cluster health check failed: {message}")
+                sys.exit(1)
+            
+            logger.success(f"Cluster health: {message}")
+            
+            repository.ensure_repository(database, cfg['repository'])
+            
+            logger.success(f"Repository '{cfg['repository']}' verified")
+            
+            label = labels.determine_backup_label(
+                db=database,
+                backup_type='full',
+                database_name=cfg['database'],
+                custom_name=name
+            )
+            
+            logger.success(f"Generated label: {label}")
+            
+            backup_command = planner.build_full_backup_command(
+                database, group, cfg['repository'], label, cfg['database']
+            )
+            
+            if not backup_command:
+                logger.warning(f"No tables found in group '{group}' for database '{cfg['database']}' to backup")
+                sys.exit(1)
+            
+            tables = planner.find_tables_by_group(database, group)
+            all_partitions = planner.get_all_partitions_for_tables(database, cfg['database'], tables)
+            planner.record_backup_partitions(database, label, all_partitions)
+            
+            concurrency.reserve_job_slot(database, scope='backup', label=label)
+            
+            logger.success(f"Job slot reserved")
+            logger.info(f"Starting full backup for group '{group}'...")
+            result = executor.execute_backup(
+                database,
+                backup_command,
+                repository=cfg['repository'],
+                backup_type='full',
+                scope='backup',
+                database=cfg['database']
+            )
+            
+            if result['success']:
+                logger.success(f"Backup completed successfully: {result['final_status']['state']}")
+                sys.exit(0)
+            else:
+                state = result.get('final_status', {}).get('state', 'UNKNOWN')
+                if state == "LOST":
+                    logger.critical("Backup tracking lost!")
+                    logger.warning("Another backup operation started during ours.")
+                    logger.tip("Enable ops.run_status concurrency checks to prevent this.")
+                logger.error(f"{result['error_message']}")
+                sys.exit(1)
+                
+    except (FileNotFoundError, ValueError, RuntimeError, Exception) as e:
+        if isinstance(e, FileNotFoundError):
+            logger.error(f"Config file not found: {e}")
+        elif isinstance(e, ValueError):
+            logger.error(f"Configuration error: {e}")
+        elif isinstance(e, RuntimeError):
+            logger.error(f"{e}")
+        else:
+            logger.error(f"Unexpected error: {e}")
+        sys.exit(1)
 
 
-if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+
+
+@cli.command('restore')
+@click.option('--config', required=True, help='Path to config YAML file')
+@click.option('--target-label', required=True, help='Backup label to restore to')
+@click.option('--group', help='Optional inventory group to filter tables to restore')
+@click.option('--rename-suffix', default='_restored', help='Suffix for temporary tables during restore (default: _restored)')
+def restore_command(config, target_label, group, rename_suffix):
+    """Restore data to a specific point in time using intelligent backup chain resolution.
+    
+    This command automatically determines the correct sequence of backups needed for restore:
+    - For full backups: restores directly from the target backup
+    - For incremental backups: restores the base full backup first, then applies the incremental
+    
+    The restore process uses temporary tables with the specified suffix for safety, then performs
+    an atomic rename to make the restored data live.
+    
+    Flow: load config → find restore pair → get tables from backup → execute restore flow
+    """
+    try:
+        cfg = config_module.load_config(config)
+        config_module.validate_config(cfg)
+        
+        database = db.StarRocksDB(
+            host=cfg['host'],
+            port=cfg['port'],
+            user=cfg['user'],
+            password=os.getenv('STARROCKS_PASSWORD'),
+            database=cfg['database']
+        )
+        
+        with database:
+            was_created = schema.ensure_ops_schema(database)
+            if was_created:
+                logger.warning("ops schema was auto-created. Please run 'starrocks-br init' after populating config.")
+                logger.warning("Remember to populate ops.table_inventory with your backup groups!")
+                sys.exit(1) # Exit if schema was just created, requires user action
+            
+            logger.info(f"Finding restore sequence for target backup: {target_label}")
+            
+            try:
+                restore_pair = restore.find_restore_pair(database, target_label)
+                logger.success(f"Found restore sequence: {' -> '.join(restore_pair)}")
+            except ValueError as e:
+                logger.error(f"Failed to find restore sequence: {e}")
+                sys.exit(1)
+            
+            logger.info("Determining tables to restore from backup manifest...")
+            tables_to_restore = restore.get_tables_from_backup(database, target_label, group)
+            
+            if not tables_to_restore:
+                if group:
+                    logger.warning(f"No tables found in backup '{target_label}' for group '{group}'")
+                else:
+                    logger.warning(f"No tables found in backup '{target_label}'")
+                sys.exit(1)
+            
+            logger.success(f"Found {len(tables_to_restore)} table(s) to restore: {', '.join(tables_to_restore)}")
+            
+            logger.info("Starting restore flow...")
+            result = restore.execute_restore_flow(
+                database,
+                cfg['repository'],
+                restore_pair,
+                tables_to_restore,
+                rename_suffix
+            )
+            
+            if result['success']:
+                logger.success(result['message'])
+                sys.exit(0)
+            else:
+                logger.error(f"Restore failed: {result['error_message']}")
+                sys.exit(1)
+                
+    except FileNotFoundError as e:
+        logger.error(f"Config file not found: {e}")
+        sys.exit(1)
+    except ValueError as e:
+        logger.error(f"Configuration error: {e}")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    cli()
+
