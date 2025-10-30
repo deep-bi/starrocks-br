@@ -13,3 +13,4 @@ starrocks_br.egg-info/
 config.yaml
 .devbox/
 .devbox_setup_complete
+dist
