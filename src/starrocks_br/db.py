@@ -1,11 +1,19 @@
 import mysql.connector
-from typing import List
+from typing import Any, Dict, List, Optional
 
 
 class StarRocksDB:
     """Database connection wrapper for StarRocks."""
     
-    def __init__(self, host: str, port: int, user: str, password: str, database: str):
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        user: str,
+        password: str,
+        database: str,
+        tls_config: Optional[Dict[str, Any]] = None,
+    ):
         """Initialize database connection.
         
         Args:
@@ -21,16 +29,33 @@ class StarRocksDB:
         self.password = password
         self.database = database
         self._connection = None
+        self.tls_config = tls_config or {}
     
     def connect(self) -> None:
         """Establish database connection."""
-        self._connection = mysql.connector.connect(
-            host=self.host,
-            port=self.port,
-            user=self.user,
-            password=self.password,
-            database=self.database
-        )
+        conn_args: Dict[str, Any] = {
+            'host': self.host,
+            'port': self.port,
+            'user': self.user,
+            'password': self.password,
+            'database': self.database,
+        }
+
+        if self.tls_config.get('enabled'):
+            ssl_args: Dict[str, Any] = {
+                'ssl_ca': self.tls_config.get('ca_cert'),
+                'ssl_cert': self.tls_config.get('client_cert'),
+                'ssl_key': self.tls_config.get('client_key'),
+                'ssl_verify_cert': self.tls_config.get('verify_server_cert', True),
+            }
+
+            tls_versions = self.tls_config.get('tls_versions', ['TLSv1.2', 'TLSv1.3'])
+            if tls_versions:
+                ssl_args['tls_versions'] = tls_versions
+
+            conn_args.update({key: value for key, value in ssl_args.items() if value is not None})
+
+        self._connection = mysql.connector.connect(**conn_args)
     
     def close(self) -> None:
         """Close database connection."""

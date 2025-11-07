@@ -43,7 +43,8 @@ def init(config):
             port=cfg['port'],
             user=cfg['user'],
             password=os.getenv('STARROCKS_PASSWORD'),
-            database=cfg['database']
+            database=cfg['database'],
+            tls_config=cfg.get('tls'),
         )
         
         with database:
@@ -102,7 +103,8 @@ def backup_incremental(config, baseline_backup, group, name):
             port=cfg['port'],
             user=cfg['user'],
             password=os.getenv('STARROCKS_PASSWORD'),
-            database=cfg['database']
+            database=cfg['database'],
+            tls_config=cfg.get('tls'),
         )
         
         with database:
@@ -215,7 +217,8 @@ def backup_full(config, group, name):
             port=cfg['port'],
             user=cfg['user'],
             password=os.getenv('STARROCKS_PASSWORD'),
-            database=cfg['database']
+            database=cfg['database'],
+            tls_config=cfg.get('tls'),
         )
         
         with database:
@@ -322,7 +325,8 @@ def restore_command(config, target_label, group, rename_suffix):
             port=cfg['port'],
             user=cfg['user'],
             password=os.getenv('STARROCKS_PASSWORD'),
-            database=cfg['database']
+            database=cfg['database'],
+            tls_config=cfg.get('tls'),
         )
         
         with database:

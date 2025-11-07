@@ -67,3 +67,81 @@ def test_should_support_context_manager(mocker, setup_password_env):
     
     assert mock_connection.close.call_count == 1
 
+
+def test_should_pass_tls_arguments_when_tls_enabled(mocker, setup_password_env):
+    mock_connect = mocker.patch('mysql.connector.connect')
+    tls_config = {
+        'enabled': True,
+        'ca_cert': '/path/to/ca.pem',
+    }
+
+    conn = db.StarRocksDB(
+        'localhost',
+        9030,
+        'root',
+        os.getenv('STARROCKS_PASSWORD'),
+        'test_db',
+        tls_config=tls_config,
+    )
+
+    conn.connect()
+
+    called_kwargs = mock_connect.call_args.kwargs
+    assert called_kwargs['ssl_ca'] == '/path/to/ca.pem'
+    assert called_kwargs['ssl_verify_cert'] is True
+    assert called_kwargs['tls_versions'] == ['TLSv1.2', 'TLSv1.3']
+    assert 'ssl_cert' not in called_kwargs
+    assert 'ssl_key' not in called_kwargs
+
+
+def test_should_include_client_credentials_when_mutual_tls_enabled(mocker, setup_password_env):
+    mock_connect = mocker.patch('mysql.connector.connect')
+    tls_config = {
+        'enabled': True,
+        'ca_cert': '/path/to/ca.pem',
+        'client_cert': '/path/to/client.pem',
+        'client_key': '/path/to/client.key',
+        'verify_server_cert': False,
+        'tls_versions': ['TLSv1.3'],
+    }
+
+    conn = db.StarRocksDB(
+        'localhost',
+        9030,
+        'root',
+        os.getenv('STARROCKS_PASSWORD'),
+        'test_db',
+        tls_config=tls_config,
+    )
+
+    conn.connect()
+
+    called_kwargs = mock_connect.call_args.kwargs
+    assert called_kwargs['ssl_ca'] == '/path/to/ca.pem'
+    assert called_kwargs['ssl_cert'] == '/path/to/client.pem'
+    assert called_kwargs['ssl_key'] == '/path/to/client.key'
+    assert called_kwargs['ssl_verify_cert'] is False
+    assert called_kwargs['tls_versions'] == ['TLSv1.3']
+
+
+def test_should_skip_tls_arguments_when_tls_disabled(mocker, setup_password_env):
+    mock_connect = mocker.patch('mysql.connector.connect')
+
+    conn = db.StarRocksDB(
+        'localhost',
+        9030,
+        'root',
+        os.getenv('STARROCKS_PASSWORD'),
+        'test_db',
+        tls_config={'enabled': False},
+    )
+
+    conn.connect()
+
+    called_kwargs = mock_connect.call_args.kwargs
+    assert 'ssl_ca' not in called_kwargs
+    assert 'ssl_cert' not in called_kwargs
+    assert 'ssl_key' not in called_kwargs
+    assert 'tls_versions' not in called_kwargs
+    assert 'ssl_verify_cert' not in called_kwargs
+

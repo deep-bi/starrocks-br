@@ -6,6 +6,20 @@ The StarRocks Backup & Restore tool provides production-grade automation for bac
 
 **Important:** This tool requires StarRocks 3.5 or later. Earlier versions are not supported due to differences in the `SHOW FRONTENDS` and `SHOW BACKENDS` command output formats, which are used for cluster health checks.
 
+## Summary
+
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Configuration](#configuration)
+  - [Password Management](#password-management)
+  - [Connecting with TLS/SSL](#connecting-with-tlsssl)
+- [Commands](#commands)
+- [Example Usage Scenarios](#example-usage-scenarios)
+- [Error Handling](#error-handling)
+- [Monitoring](#monitoring)
+- [Testing](#testing)
+- [Project Status](#project-status)
+
 ## Installation
 
 ### Option 1: Install from PyPI (Recommended for Production)
@@ -124,6 +138,53 @@ The database password must be provided via the `STARROCKS_PASSWORD` environment 
 ```bash
 export STARROCKS_PASSWORD="your_password"
 ```
+
+### Connecting with TLS/SSL
+
+The tool can make secure connections to StarRocks using TLS. Add an optional `tls` section to your `config.yaml` when you need encryption.
+
+#### Scenario 1: Server Authentication (Most Common)
+
+Use this setup when the client only needs to verify the StarRocks server certificate.
+
+```yaml
+host: "127.0.0.1"
+port: 9030
+user: "root"
+database: "your_database"
+repository: "your_repo_name"
+
+tls:
+  enabled: true
+  ca_cert: "/path/to/ca.pem"
+```
+
+- `enabled`: Turns TLS on or off.
+- `ca_cert`: Certificate Authority file used to validate the server certificate.
+- `verify_server_cert` (optional, default `true`): Disable only if you need to skip certificate validation.
+
+#### Scenario 2: Mutual TLS (mTLS)
+
+Use this when both the client and server must present certificates.
+
+```yaml
+host: "127.0.0.1"
+port: 9030
+user: "root"
+database: "your_database"
+repository: "your_repo_name"
+
+tls:
+  enabled: true
+  ca_cert: "/path/to/ca.pem"
+  client_cert: "/path/to/client-cert.pem"
+  client_key: "/path/to/client-key.pem"
+```
+
+- `client_cert`: Client certificate presented to the server.
+- `client_key`: Private key paired with the client certificate.
+
+Regardless of the scenario, the connection defaults to modern TLS versions (`TLSv1.2`, `TLSv1.3`). Provide a `tls_versions` list if you need different protocol settings.
 
 **Note:** The repository must be created in StarRocks using the `CREATE REPOSITORY` command before running backups. For example:
 
