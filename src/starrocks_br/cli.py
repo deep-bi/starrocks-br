@@ -351,8 +351,9 @@ def backup_full(config, group, name):
 @click.option('--config', required=True, help='Path to config YAML file')
 @click.option('--target-label', required=True, help='Backup label to restore to')
 @click.option('--group', help='Optional inventory group to filter tables to restore')
+@click.option('--table', help='Optional table name to restore (table name only, database comes from config). Cannot be used with --group.')
 @click.option('--rename-suffix', default='_restored', help='Suffix for temporary tables during restore (default: _restored)')
-def restore_command(config, target_label, group, rename_suffix):
+def restore_command(config, target_label, group, table, rename_suffix):
     """Restore data to a specific point in time using intelligent backup chain resolution.
     
     This command automatically determines the correct sequence of backups needed for restore:
@@ -365,6 +366,20 @@ def restore_command(config, target_label, group, rename_suffix):
     Flow: load config → find restore pair → get tables from backup → execute restore flow
     """
     try:
+        if group and table:
+            logger.error("Cannot specify both --group and --table. Use --table for single table restore or --group for inventory group restore.")
+            sys.exit(1)
+        
+        if table:
+            table = table.strip()
+            if not table:
+                logger.error("Table name cannot be empty")
+                sys.exit(1)
+            
+            if '.' in table:
+                logger.error("Table name must not include database prefix. Use 'table_name' not 'database.table_name'. Database comes from config file.")
+                sys.exit(1)
+        
         cfg = config_module.load_config(config)
         config_module.validate_config(cfg)
         
@@ -394,11 +409,24 @@ def restore_command(config, target_label, group, rename_suffix):
                 sys.exit(1)
             
             logger.info("Determining tables to restore from backup manifest...")
-            tables_to_restore = restore.get_tables_from_backup(database, target_label, group)
+            
+            try:
+                tables_to_restore = restore.get_tables_from_backup(
+                    database, 
+                    target_label, 
+                    group=group, 
+                    table=table, 
+                    database=cfg['database'] if table else None
+                )
+            except ValueError as e:
+                logger.error(str(e))
+                sys.exit(1)
             
             if not tables_to_restore:
                 if group:
                     logger.warning(f"No tables found in backup '{target_label}' for group '{group}'")
+                elif table:
+                    logger.warning(f"No tables found in backup '{target_label}' for table '{table}'")
                 else:
                     logger.warning(f"No tables found in backup '{target_label}'")
                 sys.exit(1)

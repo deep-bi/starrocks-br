@@ -290,7 +290,8 @@ starrocks-br restore \
 **Parameters:**
 - `--config`: Path to config YAML file (required)
 - `--target-label`: Backup label to restore to (required)
-- `--group`: Optional inventory group to filter tables to restore
+- `--group`: Optional inventory group to filter tables to restore (cannot be used with `--table`)
+- `--table`: Optional table name to restore (table name only, database comes from config). Cannot be used with `--group`
 - `--rename-suffix`: Suffix for temporary tables during restore (default: `_restored`)
 
 **How it works:**
@@ -298,9 +299,13 @@ starrocks-br restore \
 - **For incremental backups**: Automatically restores the base full backup first, then applies the incremental
 - **Safety mechanism**: Uses temporary tables with the specified suffix, then performs atomic rename to make restored data live
 
-**Two Restore Modes:**
-- **Disaster Recovery**: Restore all tables from a backup (omit `--group` parameter)
-- **Surgical Restore**: Restore only specific table groups (use `--group` parameter)
+**Three Restore Modes:**
+- **Disaster Recovery**: Restore all tables from a backup (omit both `--group` and `--table` parameters)
+- **Surgical Restore by Group**: Restore only specific table groups (use `--group` parameter)
+- **Single Table Restore**: Restore a specific table (use `--table` parameter). The table name should not include the database prefix - the database comes from the config file.
+
+**Table Name Format:**
+When using `--table`, provide only the table name (e.g., `fact_sales`), not `database.table_name`. The database is taken from the `database` field in your config file. For multiple tables, set up an inventory group and use `--group` instead.
 
 **Purpose of `--rename-suffix`:**
 The restore process creates temporary tables with the specified suffix (e.g., `table_restored`) to avoid conflicts with existing tables. Once the restore is complete and verified, the tool performs atomic renames to swap the original tables with the restored data. This ensures data safety and allows for rollback if needed.
@@ -355,6 +360,12 @@ starrocks-br restore \
 starrocks-br restore \
   --config config.yaml \
   --target-label sales_db_20251014_full
+
+# Restore a single table from a backup
+starrocks-br restore \
+  --config config.yaml \
+  --target-label sales_db_20251015_inc \
+  --table fact_sales
 ```
 
 ## Error Handling
