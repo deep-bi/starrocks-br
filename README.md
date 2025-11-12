@@ -41,11 +41,46 @@ starrocks-br --help
 
 **Note:** Always activate the virtual environment before using the tool. The `starrocks-br` command will only be available when the virtual environment is activated.
 
-### Option 2: Using Devbox (Recommended for Development)
+### Option 2: Standalone Executable (Alternative if PyPI Installation Fails)
+
+If you encounter problems when installing via PyPI (often due to `mysql-connector-python` native extension issues), you can build a standalone executable that bundles all dependencies.
+
+**Note:** This requires cloning the repository first.
+
+```bash
+# Clone the repository
+git clone https://github.com/deep-bi/starrocks-br
+cd starrocks-br
+
+# Create and activate virtual environment
+python3 -m venv .venv
+source .venv/bin/activate  # On Linux/Mac
+# .venv\Scripts\activate    # On Windows
+
+# Install dependencies
+pip install -e .
+
+# Build the standalone executable
+./build_executable.sh
+
+# The executable will be created in: dist/starrocks-br
+# You can now distribute or use this executable directly
+./dist/starrocks-br --help
+```
+
+**Note:** The executable is platform-specific. Build it on the same OS/architecture where you'll use it, or build it on the target machine.
+
+### Option 3: Using Devbox (Recommended for Development)
+
+**Note:** This requires cloning the repository first.
 
 Devbox provides a reproducible development environment with all required tools.
 
 ```bash
+# Clone the repository
+git clone https://github.com/deep-bi/starrocks-br
+cd starrocks-br
+
 # Install devbox (if not already installed)
 curl -fsSL https://get.jetpack.io/devbox | bash
 
@@ -61,11 +96,11 @@ starrocks-br --help
 pytest
 ```
 
-### Option 3: Manual Development Setup
+### Option 4: Manual Development Setup
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/deep-bi/starrocks-br
 cd starrocks-br
 
 # Create and activate virtual environment
