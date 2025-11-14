@@ -1,4 +1,5 @@
 import pytest
+import re
 from unittest.mock import Mock, patch
 from starrocks_br import restore
 from starrocks_br import history
@@ -1013,10 +1014,15 @@ def test_should_perform_atomic_rename(mocker):
     assert db.execute.call_count == 4  # 2 tables * 2 rename statements each
     
     calls = [call[0][0] for call in db.execute.call_args_list]
-    assert "ALTER TABLE sales_db.fact_sales RENAME fact_sales_backup" in calls
+    
     assert "ALTER TABLE sales_db.fact_sales_restored RENAME fact_sales" in calls
-    assert "ALTER TABLE sales_db.dim_customers RENAME dim_customers_backup" in calls
     assert "ALTER TABLE sales_db.dim_customers_restored RENAME dim_customers" in calls
+    
+    backup_rename_pattern = re.compile(r"ALTER TABLE sales_db\.fact_sales RENAME fact_sales_backup_\d{8}_\d{6}")
+    assert any(backup_rename_pattern.match(call) for call in calls), "Expected timestamped backup rename for fact_sales"
+    
+    backup_rename_pattern = re.compile(r"ALTER TABLE sales_db\.dim_customers RENAME dim_customers_backup_\d{8}_\d{6}")
+    assert any(backup_rename_pattern.match(call) for call in calls), "Expected timestamped backup rename for dim_customers"
 
 
 def test_should_handle_atomic_rename_failure(mocker):

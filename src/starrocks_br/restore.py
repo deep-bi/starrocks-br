@@ -492,6 +492,19 @@ def _build_restore_command_without_rename(backup_label: str, repo_name: str, tab
     PROPERTIES ("backup_timestamp" = "{backup_timestamp}")"""
 
 
+def _generate_timestamped_backup_name(table_name: str) -> str:
+    """Generate a timestamped backup table name.
+    
+    Args:
+        table_name: Original table name
+        
+    Returns:
+        Timestamped backup name in format: {table_name}_backup_YYYYMMDD_HHMMSS
+    """
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    return f"{table_name}_backup_{timestamp}"
+
+
 def _perform_atomic_rename(db, tables: List[str], rename_suffix: str) -> Dict:
     """Perform atomic rename of temporary tables to make them live."""
     try:
@@ -499,8 +512,9 @@ def _perform_atomic_rename(db, tables: List[str], rename_suffix: str) -> Dict:
         for table in tables:
             database, table_name = table.split('.', 1)
             temp_table_name = f"{table_name}{rename_suffix}"
+            backup_table_name = _generate_timestamped_backup_name(table_name)
             
-            rename_statements.append(f"ALTER TABLE {database}.{table_name} RENAME {table_name}_backup")
+            rename_statements.append(f"ALTER TABLE {database}.{table_name} RENAME {backup_table_name}")
             rename_statements.append(f"ALTER TABLE {database}.{temp_table_name} RENAME {table_name}")
         
         for statement in rename_statements:
