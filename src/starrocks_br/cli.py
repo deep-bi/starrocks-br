@@ -363,7 +363,7 @@ def restore_command(config, target_label, group, table, rename_suffix):
     The restore process uses temporary tables with the specified suffix for safety, then performs
     an atomic rename to make the restored data live.
     
-    Flow: load config → find restore pair → get tables from backup → execute restore flow
+    Flow: load config → check health → ensure repository → find restore pair → get tables from backup → execute restore flow
     """
     try:
         if group and table:
@@ -398,6 +398,17 @@ def restore_command(config, target_label, group, table, rename_suffix):
                 logger.warning("ops schema was auto-created. Please run 'starrocks-br init' after populating config.")
                 logger.warning("Remember to populate ops.table_inventory with your backup groups!")
                 sys.exit(1) # Exit if schema was just created, requires user action
+            
+            healthy, message = health.check_cluster_health(database)
+            if not healthy:
+                logger.error(f"Cluster health check failed: {message}")
+                sys.exit(1)
+            
+            logger.success(f"Cluster health: {message}")
+            
+            repository.ensure_repository(database, cfg['repository'])
+            
+            logger.success(f"Repository '{cfg['repository']}' verified")
             
             logger.info(f"Finding restore sequence for target backup: {target_label}")
             
@@ -454,6 +465,9 @@ def restore_command(config, target_label, group, table, rename_suffix):
         sys.exit(1)
     except ValueError as e:
         logger.error(f"Configuration error: {e}")
+        sys.exit(1)
+    except RuntimeError as e:
+        logger.error(f"{e}")
         sys.exit(1)
     except Exception as e:
         logger.error(f"Unexpected error: {e}")
