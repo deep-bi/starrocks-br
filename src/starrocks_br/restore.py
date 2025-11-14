@@ -338,7 +338,19 @@ def get_tables_from_backup(db, label: str, group: Optional[str] = None, table: O
         if not group_rows:
             return []
         
-        group_tables = {f"{row[0]}.{row[1]}" for row in group_rows}
+        group_tables = set()
+        for row in group_rows:
+            database_name, table_name = row[0], row[1]
+            if table_name == '*':
+                show_tables_query = f"SHOW TABLES FROM {database_name}"
+                try:
+                    tables_rows = db.query(show_tables_query)
+                    for table_row in tables_rows:
+                        group_tables.add(f"{database_name}.{table_row[0]}")
+                except Exception:
+                    continue
+            else:
+                group_tables.add(f"{database_name}.{table_name}")
         
         tables = [table for table in tables if table in group_tables]
     

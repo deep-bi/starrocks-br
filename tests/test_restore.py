@@ -862,6 +862,24 @@ def test_should_return_empty_list_when_group_has_no_tables(mocker):
     assert result == []
 
 
+def test_should_get_tables_from_backup_with_wildcard_group_filter(mocker):
+    """Test getting tables from backup with group filtering that includes wildcard entries."""
+    db = mocker.Mock()
+    db.query.side_effect = [
+        [("sales_db", "fact_sales"), ("sales_db", "dim_customers"), ("orders_db", "fact_orders")],  # Backup tables
+        [("sales_db", "*")],  # Group inventory with wildcard
+        [("fact_sales",), ("dim_customers",)]  # SHOW TABLES FROM sales_db result
+    ]
+    
+    result = restore.get_tables_from_backup(db, "sales_db_20251015_full", group="full_database")
+    
+    assert result == ["sales_db.fact_sales", "sales_db.dim_customers"]
+    assert db.query.call_count == 3
+    
+    calls = [call[0][0] for call in db.query.call_args_list]
+    assert "SHOW TABLES FROM sales_db" in calls
+
+
 def test_should_get_tables_from_backup_with_table_filter(mocker):
     """Test getting tables from backup with table filtering."""
     db = mocker.Mock()
