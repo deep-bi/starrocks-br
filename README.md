@@ -17,8 +17,6 @@ The StarRocks Backup & Restore tool provides production-grade automation for bac
 - [Example Usage Scenarios](#example-usage-scenarios)
 - [Error Handling](#error-handling)
 - [Monitoring](#monitoring)
-- [Testing](#testing)
-- [Project Status](#project-status)
 
 ## Installation
 
@@ -41,40 +39,38 @@ starrocks-br --help
 
 **Note:** Always activate the virtual environment before using the tool. The `starrocks-br` command will only be available when the virtual environment is activated.
 
-### Option 2: Standalone Executable (Alternative if PyPI Installation Fails)
+### Option 2: Download Pre-built Standalone Executable
 
-If you encounter problems when installing via PyPI (often due to `mysql-connector-python` native extension issues), you can build a standalone executable that bundles all dependencies.
+If you prefer not to manage Python environments, you can download a bundled executable that includes the Python runtime and all dependencies.
 
-**Note:** This requires cloning the repository first.
+1. **Download the artifact** for your platform from the latest [Build Executables workflow run](https://github.com/deep-bi/starrocks-br/actions/workflows/build-executables.yml) (Artifacts section).  
+   - `starrocks-br-linux-x86_64` → Linux (Intel/AMD)  
+   - `starrocks-br-windows-x86_64` → Windows (Intel/AMD)  
+   - `starrocks-br-macos-arm64` → macOS on Apple Silicon (M1/M2/M3)  
+   - `starrocks-br-macos-x86_64` → macOS on Intel chips
 
-```bash
-# Clone the repository
-git clone https://github.com/deep-bi/starrocks-br
-cd starrocks-br
+2. **Extract the ZIP file** (artifacts are delivered as ZIPs).
 
-# Create and activate virtual environment
-python3 -m venv .venv
-source .venv/bin/activate  # On Linux/Mac
-# .venv\Scripts\activate    # On Windows
+3. **Make the file executable (Linux/macOS):**
+   ```bash
+   chmod +x starrocks-br
+   ```
 
-# Install dependencies
-pip install -e .
+4. **Run it directly:**
+   ```bash
+   ./starrocks-br --help        # Linux/macOS
+   .\starrocks-br.exe --help    # Windows (PowerShell)
+   ```
 
-# Build the standalone executable
-./build_executable.sh
+5. **Keep it updated:** Download the latest artifact whenever a new release is published. (Future releases will bundle executables automatically.)
 
-# The executable will be created in: dist/starrocks-br
-# You can now distribute or use this executable directly
-./dist/starrocks-br --help
-```
-
-**Note:** The executable is platform-specific. Build it on the same OS/architecture where you'll use it, or build it on the target machine.
+**Need to build it yourself?** Clone the repo and run `./build_executable.sh` to recreate the executable locally (see script for details).
 
 ### Option 3: Using Devbox (Recommended for Development)
 
 **Note:** This requires cloning the repository first.
 
-Devbox provides a reproducible development environment with all required tools.
+[Devbox](https://www.jetify.com/devbox) is a reproducible development environment that installs all required tools (Python, dependencies, virtualenv) in one step.
 
 ```bash
 # Clone the repository
@@ -115,7 +111,7 @@ pip install -e ".[dev]"
 
 ## Quick Start
 
-After installing from PyPI, follow these steps:
+After installing the CLI (via PyPI, executable download, Devbox, or manual setup), follow these steps:
 
 1. **Activate your virtual environment** (if not already active):
    ```bash
@@ -441,41 +437,3 @@ FROM ops.run_status
 WHERE state = 'ACTIVE';
 ```
 
-## Testing
-
-The project includes comprehensive tests (150+ tests, 90%+ coverage).
-
-```bash
-# Run all tests
-pytest
-
-# Run with coverage report
-pytest --cov=src/starrocks_br --cov-report=term-missing
-
-# Run specific test file
-pytest tests/test_cli.py -v
-```
-
-## Project Status
-
-✅ **Completed:**
-- Config loader & validation
-- Database connection wrapper
-- StarRocks repository management
-- Cluster health checks
-- Job slot reservation (concurrency control)
-- Label generation with collision handling
-- Group-based backup planners for full and incremental backups
-- Schema initialization (ops tables) with auto-creation
-- Backup & restore history logging
-- Backup executor with polling
-- Intelligent point-in-time restore with automatic backup chain resolution
-- Partition metadata tracking for backup manifests
-- Atomic table rename for safe restore operations
-- CLI commands (init, backup full, backup incremental, restore)
-
-📋 **Optional (deferred):**
-- Exponential backoff retry for job conflicts
-- Disk space precheck (requires external monitoring)
-- Formal runbooks and DR drill procedures
-- Monitoring dashboards and alerting integration
