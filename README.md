@@ -33,7 +33,7 @@ source .venv/bin/activate  # On Linux/Mac
 # .venv\Scripts\activate    # On Windows
 
 # Install the package from PyPI
-pip install starrocks-br==0.1.0
+pip install starrocks-br
 
 # Verify the installation
 starrocks-br --help
