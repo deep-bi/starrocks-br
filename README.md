@@ -23,7 +23,7 @@ The StarRocks Backup & Restore tool provides production-grade automation for bac
 
 ## Installation
 
-### Option 1: Install from PyPI (Recommended for Production)
+### Option 1: Install from PyPI
 
 We recommend using a virtual environment to ensure proper script availability and dependency isolation:
 
@@ -46,26 +46,32 @@ starrocks-br --help
 
 If you prefer not to manage Python environments, you can download a bundled executable that includes the Python runtime and all dependencies.
 
-1. **Download the artifact** for your platform from the latest [Build Executables workflow run](https://github.com/deep-bi/starrocks-br/actions/workflows/build-executables.yml) (Artifacts section).  
-   - `starrocks-br-linux-x86_64` → Linux (Intel/AMD)  
-   - `starrocks-br-windows-x86_64` → Windows (Intel/AMD)  
-   - `starrocks-br-macos-arm64` → macOS on Apple Silicon (M1/M2/M3)  
+1. **Download the executable** for your platform from the [latest release](https://github.com/deep-bi/starrocks-br/releases/latest):
+   - `starrocks-br-linux-x86_64` → Linux (Intel/AMD)
+   - `starrocks-br-windows-x86_64.exe` → Windows (Intel/AMD)
+   - `starrocks-br-macos-arm64` → macOS on Apple Silicon (M1/M2/M3)
    - `starrocks-br-macos-x86_64` → macOS on Intel chips
 
-2. **Extract the ZIP file** (artifacts are delivered as ZIPs).
-
-3. **Make the file executable (Linux/macOS):**
+2. **Make the file executable (Linux/macOS only):**
    ```bash
-   chmod +x starrocks-br
+   chmod +x starrocks-br-*
    ```
 
-4. **Run it directly:**
+3. **Run it directly:**
    ```bash
-   ./starrocks-br --help        # Linux/macOS
-   .\starrocks-br.exe --help    # Windows (PowerShell)
+   ./starrocks-br-linux-x86_64 --help     # Linux
+   ./starrocks-br-macos-arm64 --help      # macOS ARM
+   ./starrocks-br-macos-x86_64 --help     # macOS Intel
+   .\starrocks-br-windows-x86_64.exe --help  # Windows (PowerShell)
    ```
 
-5. **Keep it updated:** Download the latest artifact whenever a new release is published. (Future releases will bundle executables automatically.)
+4. **Optional:** Rename or symlink for convenience:
+   ```bash
+   # Linux/macOS
+   mv starrocks-br-linux-x86_64 starrocks-br
+   # or create a symlink
+   ln -s starrocks-br-linux-x86_64 starrocks-br
+   ```
 
 **Need to build it yourself?** Clone the repo and run `./build_executable.sh` to recreate the executable locally (see script for details).
 
