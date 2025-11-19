@@ -1,6 +1,6 @@
 # StarRocks Backup & Restore
 
-Production-grade automation for StarRocks backup and restore operations.
+Full and incremental backup automation for StarRocks shared-nothing clusters.
 
 **Requirements:** StarRocks 3.5+ (shared-nothing mode)
 
@@ -8,7 +8,9 @@ Production-grade automation for StarRocks backup and restore operations.
 
 ## Why This Tool?
 
-StarRocks provides native `BACKUP` and `RESTORE` commands, but they have limitations:
+StarRocks provides native `BACKUP` and `RESTORE` commands, but they only support full backups. For large-scale deployments hosting data at petabyte scale, full backups are not feasible due to time, storage, and network constraints.
+
+This tool adds **incremental backup capabilities** to StarRocks by leveraging native partition-based backup features.
 
 **What StarRocks doesn't provide:**
 - ❌ **No incremental backups** - You must manually identify changed partitions and build complex backup commands
@@ -26,7 +28,7 @@ StarRocks provides native `BACKUP` and `RESTORE` commands, but they have limitat
 - ✅ **Safe restores** - Atomic rename mechanism prevents data loss during restore
 - ✅ **Metadata management** - Dedicated `ops` database tracks all backup metadata and partition manifests
 
-In short: this tool transforms StarRocks's basic backup/restore commands into a **production-ready backup solution**.
+In short: this tool transforms StarRocks's basic backup/restore commands into a **production-ready incremental backup solution**.
 
 ## Documentation
 
@@ -54,21 +56,22 @@ Download from [releases](https://github.com/deep-bi/starrocks-br/releases/latest
 ```bash
 # Linux
 chmod +x starrocks-br-linux-x86_64
-./starrocks-br-linux-x86_64 --help
+mv starrocks-br-linux-x86_64 starrocks-br
+./starrocks-br --help
 ```
 
 See [Installation Guide](docs/installation.md) for all options.
 
 ## Configuration
 
-Create `config.yaml`:
+Create a `config.yaml` file pointing to your StarRocks cluster:
 
 ```yaml
-host: "127.0.0.1"
-port: 9030
-user: "root"
-database: "your_database"
-repository: "your_repo_name"  # Created via CREATE REPOSITORY in StarRocks
+host: "127.0.0.1"       # StarRocks FE node address
+port: 9030              # MySQL protocol port
+user: "root"            # Database user with backup/restore privileges
+database: "your_database"   # Database containing tables to backup
+repository: "your_repo_name"  # Repository created via CREATE REPOSITORY in StarRocks
 ```
 
 Set password:

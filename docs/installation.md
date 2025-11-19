@@ -43,7 +43,24 @@ chmod +x starrocks-br-*
 .\starrocks-br-windows-x86_64.exe --help
 ```
 
-## Option 3: Devbox (Development)
+## Option 3: Micromamba
+
+[Micromamba](https://mamba.readthedocs.io/en/latest/user_guide/micromamba.html) is a lightweight package manager that creates isolated environments. It's useful when you want environment isolation without a full Anaconda/Miniconda installation.
+
+```bash
+# Install micromamba (if not already installed)
+"${SHELL}" <(curl -L micro.mamba.pm/install.sh)
+
+# Create environment and install
+micromamba create -n starrocks-br python=3.11 -c conda-forge
+micromamba activate starrocks-br
+pip install starrocks-br
+
+# Verify
+starrocks-br --help
+```
+
+## Option 4: Devbox (Development)
 
 **Recommended for contributors.**
 
@@ -63,7 +80,7 @@ starrocks-br --help
 pytest
 ```
 
-## Option 4: Manual Development Setup
+## Option 5: Manual Development Setup
 
 ```bash
 # Clone the repository
