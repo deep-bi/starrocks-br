@@ -35,8 +35,8 @@ def find_latest_full_backup(db, database: str) -> Optional[Dict[str, str]]:
     finished_at = row[2]
     
     if isinstance(finished_at, datetime.datetime):
-        cluster_tz = db.timezone
-        finished_at = finished_at.strftime("%Y-%m-%d %H:%M:%S")
+        finished_at_normalized = timezone.normalize_datetime_to_tz(finished_at, db.timezone)
+        finished_at = finished_at_normalized.strftime("%Y-%m-%d %H:%M:%S")
     elif not isinstance(finished_at, str):
         finished_at = str(finished_at)
     

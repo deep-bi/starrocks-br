@@ -5,6 +5,14 @@ from starrocks_br import restore
 from starrocks_br import history
 
 
+@pytest.fixture
+def db_with_timezone():
+    """Fixture that provides a mock database object with timezone property set to UTC."""
+    db = Mock()
+    db.timezone = "UTC"
+    return db
+
+
 def test_should_get_snapshot_timestamp_from_repository(mocker):
     """Test getting snapshot timestamp from repository."""
     db = mocker.Mock()
@@ -175,8 +183,8 @@ def test_should_log_restore_history(mocker):
     assert "sales_db_20251015_incremental" in sql
 
 
-def test_should_execute_restore_workflow(mocker):
-    db = mocker.Mock()
+def test_should_execute_restore_workflow(mocker, db_with_timezone):
+    db = db_with_timezone
     db.execute.return_value = None
     db.query.side_effect = [
         [{"Label": "sales_db_20251015_incremental", "State": "PENDING"}],
@@ -348,9 +356,9 @@ def test_should_handle_empty_restore_status_result():
     assert status["state"] == "TIMEOUT"
 
 
-def test_should_execute_restore_with_custom_polling_parameters():
+def test_should_execute_restore_with_custom_polling_parameters(db_with_timezone):
     """Test restore execution with custom polling parameters."""
-    db = Mock()
+    db = db_with_timezone
     db.execute.return_value = None
     db.query.side_effect = [
         [{"Label": "restore_job", "State": "PENDING"}],
@@ -374,9 +382,9 @@ def test_should_execute_restore_with_custom_polling_parameters():
     assert result["final_status"]["state"] == "FINISHED"
 
 
-def test_should_execute_restore_with_history_logging_failure():
+def test_should_execute_restore_with_history_logging_failure(db_with_timezone):
     """Test restore execution when history logging fails."""
-    db = Mock()
+    db = db_with_timezone
     db.execute.return_value = None
     db.query.side_effect = [
         [{"Label": "restore_job", "State": "RUNNING"}],
@@ -420,9 +428,9 @@ def test_should_return_lost_when_label_mismatch():
     assert db.query.call_count == 2
 
 
-def test_should_execute_restore_with_job_slot_completion_failure():
+def test_should_execute_restore_with_job_slot_completion_failure(db_with_timezone):
     """Test restore execution when job slot completion fails."""
-    db = Mock()
+    db = db_with_timezone
     db.execute.return_value = None
     db.query.side_effect = [
         [{"Label": "restore_job", "State": "RUNNING"}],
@@ -451,9 +459,9 @@ def test_should_execute_restore_with_job_slot_completion_failure():
     assert complete_slot.call_count == 1
 
 
-def test_should_execute_restore_with_both_logging_and_slot_failures():
+def test_should_execute_restore_with_both_logging_and_slot_failures(db_with_timezone):
     """Test restore execution when both history logging and job slot completion fail."""
-    db = Mock()
+    db = db_with_timezone
     db.execute.return_value = None
     db.query.side_effect = [
         [{"Label": "restore_job", "State": "RUNNING"}],
@@ -482,9 +490,9 @@ def test_should_execute_restore_with_both_logging_and_slot_failures():
     assert complete_slot.call_count == 1
 
 
-def test_should_handle_restore_execution_with_very_long_polling():
+def test_should_handle_restore_execution_with_very_long_polling(db_with_timezone):
     """Test restore execution with very long polling duration."""
-    db = Mock()
+    db = db_with_timezone
     db.execute.return_value = None
     db.query.return_value = [{"Label": "restore_job", "State": "RUNNING"}]
     
@@ -506,9 +514,9 @@ def test_should_handle_restore_execution_with_very_long_polling():
     assert db.query.call_count == 3
 
 
-def test_should_handle_restore_execution_with_zero_polls():
+def test_should_handle_restore_execution_with_zero_polls(db_with_timezone):
     """Test restore execution with zero max polls."""
-    db = Mock()
+    db = db_with_timezone
     db.execute.return_value = None
     
     restore_command = "RESTORE SNAPSHOT restore_job FROM repo"
@@ -529,9 +537,9 @@ def test_should_handle_restore_execution_with_zero_polls():
     assert db.query.call_count == 0
 
 
-def test_should_execute_restore_with_different_scope_values():
+def test_should_execute_restore_with_different_scope_values(db_with_timezone):
     """Test restore execution with different scope values."""
-    db = Mock()
+    db = db_with_timezone
     db.execute.return_value = None
     db.query.side_effect = [
         [{"Label": "restore_job", "State": "RUNNING"}],
@@ -564,9 +572,9 @@ def test_should_execute_restore_with_different_scope_values():
     assert kwargs.get("scope") == scope
 
 
-def test_should_handle_restore_execution_with_intermittent_query_failures():
+def test_should_handle_restore_execution_with_intermittent_query_failures(db_with_timezone):
     """Test restore execution with intermittent query failures."""
-    db = Mock()
+    db = db_with_timezone
     db.execute.return_value = None
     db.query.side_effect = [
         Exception("Temporary network error"),
@@ -592,9 +600,9 @@ def test_should_handle_restore_execution_with_intermittent_query_failures():
     assert result["final_status"]["state"] == "ERROR"
 
 
-def test_should_handle_restore_command_submission_failure():
+def test_should_handle_restore_command_submission_failure(db_with_timezone):
     """Test restore execution when command submission fails."""
-    db = Mock()
+    db = db_with_timezone
     db.execute.side_effect = Exception("Permission denied")
     
     restore_command = "RESTORE SNAPSHOT restore_job FROM repo"
@@ -613,9 +621,9 @@ def test_should_handle_restore_command_submission_failure():
     assert "Failed to submit restore command" in result["error_message"]
 
 
-def test_should_execute_restore_with_multiline_command():
+def test_should_execute_restore_with_multiline_command(db_with_timezone):
     """Test restore execution with multiline restore commands."""
-    db = Mock()
+    db = db_with_timezone
     db.execute.return_value = None
     db.query.side_effect = [
         [{"Label": "complex_backup_2025-01-15", "State": "RUNNING"}],
@@ -649,9 +657,9 @@ def test_should_execute_restore_with_multiline_command():
     assert "FROM my_repo" in restore_call
 
 
-def test_should_execute_restore_with_special_characters_in_names():
+def test_should_execute_restore_with_special_characters_in_names(db_with_timezone):
     """Test restore execution with special characters in backup names."""
-    db = Mock()
+    db = db_with_timezone
     db.execute.return_value = None
     db.query.side_effect = [
         [{"Label": "restore-job_2025.01.15", "State": "RUNNING"}],
@@ -675,9 +683,9 @@ def test_should_execute_restore_with_special_characters_in_names():
     assert result["final_status"]["state"] == "FINISHED"
 
 
-def test_should_log_restore_history_with_correct_parameters():
+def test_should_log_restore_history_with_correct_parameters(db_with_timezone):
     """Test that restore history is logged with correct parameters."""
-    db = Mock()
+    db = db_with_timezone
     db.execute.return_value = None
     db.query.side_effect = [
         [{"Label": "restore_job", "State": "RUNNING"}],
@@ -710,9 +718,9 @@ def test_should_log_restore_history_with_correct_parameters():
     assert entry["restore_type"] == "partition"
 
 
-def test_should_log_restore_history_with_failure_state():
+def test_should_log_restore_history_with_failure_state(db_with_timezone):
     """Test that restore history is logged correctly for failed restores."""
-    db = Mock()
+    db = db_with_timezone
     db.execute.return_value = None
     db.query.side_effect = [
         [{"Label": "restore_job", "State": "RUNNING"}],
@@ -1247,3 +1255,35 @@ def test_should_include_correct_timestamp_in_restore_commands(mocker):
     
     assert f'PROPERTIES ("backup_timestamp" = "{mock_timestamp}")' in restore_command
     assert "DATABASE `sales_db`" in restore_command
+
+
+def test_should_use_cluster_timezone_for_restore_timestamps(mocker):
+    """Test that execute_restore uses cluster timezone for timestamps, not local time."""
+    db = mocker.Mock()
+    db.timezone = "Asia/Shanghai"
+    db.execute.return_value = None
+    db.query.return_value = [{"Label": "test_label", "State": "FINISHED"}]
+    
+    log_restore = mocker.patch("starrocks_br.history.log_restore")
+    complete_slot = mocker.patch("starrocks_br.concurrency.complete_job_slot")
+    mock_get_time = mocker.patch("starrocks_br.timezone.get_current_time_in_cluster_tz")
+    mock_get_time.return_value = "2025-11-20 15:30:00"
+    
+    restore.execute_restore(
+        db,
+        "RESTORE SNAPSHOT test FROM repo",
+        backup_label="test_label",
+        restore_type="full",
+        repository="repo",
+        database="test_db",
+        max_polls=5,
+        poll_interval=0.001,
+    )
+    
+    assert mock_get_time.call_count == 2
+    assert mock_get_time.call_args_list[0][0][0] == "Asia/Shanghai"
+    assert mock_get_time.call_args_list[1][0][0] == "Asia/Shanghai"
+    
+    log_restore_call = log_restore.call_args[0][1]
+    assert log_restore_call["started_at"] == "2025-11-20 15:30:00"
+    assert log_restore_call["finished_at"] == "2025-11-20 15:30:00"

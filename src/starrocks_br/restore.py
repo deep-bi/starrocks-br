@@ -1,7 +1,7 @@
 import time
 import datetime
 from typing import Dict, List, Optional
-from . import history, concurrency, logger, utils
+from . import history, concurrency, logger, utils, timezone
 
 MAX_POLLS = 86400 # 1 day
 
@@ -163,10 +163,11 @@ def execute_restore(
     scope: str = "restore",
 ) -> Dict:
     """Execute a complete restore workflow: submit command and monitor progress.
-    
+
     Returns dictionary with keys: success, final_status, error_message
     """
-    started_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cluster_tz = db.timezone
+    started_at = timezone.get_current_time_in_cluster_tz(cluster_tz)
     
     try:
         db.execute(restore_command.strip())
@@ -182,9 +183,9 @@ def execute_restore(
     
     try:
         final_status = poll_restore_status(db, label, database, max_polls, poll_interval)
-        
+
         success = final_status["state"] == "FINISHED"
-        finished_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        finished_at = timezone.get_current_time_in_cluster_tz(cluster_tz)
         
         try:
             history.log_restore(
