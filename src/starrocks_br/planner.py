@@ -2,7 +2,7 @@ from typing import List, Dict, Optional
 import datetime
 import hashlib
 
-from starrocks_br import logger, timezone
+from starrocks_br import logger, timezone, utils
 
 
 def find_latest_full_backup(db, database: str) -> Optional[Dict[str, str]]:
@@ -21,7 +21,7 @@ def find_latest_full_backup(db, database: str) -> Optional[Dict[str, str]]:
     FROM ops.backup_history
     WHERE backup_type = 'full'
     AND status = 'FINISHED'
-    AND label LIKE '{database}_%'
+    AND label LIKE {utils.quote_value(f'{database}_%')}
     ORDER BY finished_at DESC
     LIMIT 1
     """
@@ -56,7 +56,7 @@ def find_tables_by_group(db, group_name: str) -> List[Dict[str, str]]:
     query = f"""
     SELECT database_name, table_name
     FROM ops.table_inventory
-    WHERE inventory_group = '{group_name}'
+    WHERE inventory_group = {utils.quote_value(group_name)}
     ORDER BY database_name, table_name
     """
     rows = db.query(query)
@@ -83,7 +83,7 @@ def find_recent_partitions(db, database: str, baseline_backup_label: Optional[st
         baseline_query = f"""
         SELECT finished_at
         FROM ops.backup_history
-        WHERE label = '{baseline_backup_label}'
+        WHERE label = {utils.quote_value(baseline_backup_label)}
         AND status = 'FINISHED'
         """
         baseline_rows = db.query(baseline_query)
@@ -118,7 +118,7 @@ def find_recent_partitions(db, database: str, baseline_backup_label: Optional[st
     concrete_tables = []
     for table_entry in db_group_tables:
         if table_entry['table'] == '*':
-            show_tables_query = f"SHOW TABLES FROM {table_entry['database']}"
+            show_tables_query = f"SHOW TABLES FROM {utils.quote_identifier(table_entry['database'])}"
             tables_rows = db.query(show_tables_query)
             for row in tables_rows:
                 concrete_tables.append({
@@ -133,7 +133,7 @@ def find_recent_partitions(db, database: str, baseline_backup_label: Optional[st
         db_name = table_entry['database']
         table_name = table_entry['table']
         
-        show_partitions_query = f"SHOW PARTITIONS FROM {db_name}.{table_name}"
+        show_partitions_query = f"SHOW PARTITIONS FROM {utils.build_qualified_table_name(db_name, table_name)}"
         try:
             partition_rows = db.query(show_partitions_query)
         except Exception as e:
@@ -193,13 +193,13 @@ def build_incremental_backup_command(partitions: List[Dict[str, str]], repositor
     
     on_clauses = []
     for table, parts in table_partitions.items():
-        partitions_str = ", ".join(parts)
-        on_clauses.append(f"TABLE {table} PARTITION ({partitions_str})")
-    
+        partitions_str = ", ".join(utils.quote_identifier(p) for p in parts)
+        on_clauses.append(f"TABLE {utils.quote_identifier(table)} PARTITION ({partitions_str})")
+
     on_clause = ",\n    ".join(on_clauses)
-    
-    command = f"""BACKUP DATABASE {database} SNAPSHOT {label}
-    TO {repository}
+
+    command = f"""BACKUP DATABASE {utils.quote_identifier(database)} SNAPSHOT {utils.quote_identifier(label)}
+    TO {utils.quote_identifier(repository)}
     ON ({on_clause})"""
     
     return command
@@ -219,15 +219,15 @@ def build_full_backup_command(db, group_name: str, repository: str, label: str, 
         return ""
 
     if any(t['table'] == '*' for t in db_entries):
-        return f"""BACKUP DATABASE {database} SNAPSHOT {label}
-    TO {repository}"""
+        return f"""BACKUP DATABASE {utils.quote_identifier(database)} SNAPSHOT {utils.quote_identifier(label)}
+    TO {utils.quote_identifier(repository)}"""
 
     on_clauses = []
     for t in db_entries:
-        on_clauses.append(f"TABLE {t['table']}")
+        on_clauses.append(f"TABLE {utils.quote_identifier(t['table'])}")
     on_clause = ",\n        ".join(on_clauses)
-    return f"""BACKUP DATABASE {database} SNAPSHOT {label}
-    TO {repository}
+    return f"""BACKUP DATABASE {utils.quote_identifier(database)} SNAPSHOT {utils.quote_identifier(label)}
+    TO {utils.quote_identifier(repository)}
     ON ({on_clause})"""
 
 
@@ -249,7 +249,7 @@ def record_backup_partitions(db, label: str, partitions: List[Dict[str, str]]) -
         db.execute(f"""
             INSERT INTO ops.backup_partitions
             (key_hash, label, database_name, table_name, partition_name)
-            VALUES ('{key_hash}', '{label}', '{partition['database']}', '{partition['table']}', '{partition['partition_name']}')
+            VALUES ({utils.quote_value(key_hash)}, {utils.quote_value(label)}, {utils.quote_value(partition['database'])}, {utils.quote_value(partition['table'])}, {utils.quote_value(partition['partition_name'])})
         """)
 
 
@@ -271,15 +271,15 @@ def get_all_partitions_for_tables(db, database: str, tables: List[Dict[str, str]
     if not db_tables:
         return []
     
-    where_conditions = [f"DB_NAME = '{database}'", "PARTITION_NAME IS NOT NULL"]
-    
+    where_conditions = [f"DB_NAME = {utils.quote_value(database)}", "PARTITION_NAME IS NOT NULL"]
+
     table_conditions = []
     for table in db_tables:
         if table['table'] == '*':
             pass
         else:
-            table_conditions.append(f"TABLE_NAME = '{table['table']}'")
-    
+            table_conditions.append(f"TABLE_NAME = {utils.quote_value(table['table'])}")
+
     if table_conditions:
         where_conditions.append("(" + " OR ".join(table_conditions) + ")")
     

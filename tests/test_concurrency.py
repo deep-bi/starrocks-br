@@ -68,7 +68,8 @@ def test_should_cleanup_stale_backup_job_and_proceed(mocker):
     assert db.execute.call_count == 2
     
     cleanup_sql = db.execute.call_args_list[0][0][0]
-    assert "UPDATE ops.run_status SET state='CANCELLED'" in cleanup_sql
+    assert "UPDATE ops.run_status" in cleanup_sql
+    assert "state='CANCELLED'" in cleanup_sql
     assert "stale_backup_label" in cleanup_sql
     
     insert_sql = db.execute.call_args_list[1][0][0]
@@ -117,7 +118,8 @@ def test_should_cleanup_stale_job_when_not_found_in_show_backup(mocker):
     assert db.execute.call_count == 2
     
     cleanup_sql = db.execute.call_args_list[0][0][0]
-    assert "UPDATE ops.run_status SET state='CANCELLED'" in cleanup_sql
+    assert "UPDATE ops.run_status" in cleanup_sql
+    assert "state='CANCELLED'" in cleanup_sql
     assert "missing_backup_label" in cleanup_sql
 
 

@@ -54,7 +54,7 @@ def test_should_find_partitions_with_specific_baseline_backup(mocker):
     assert "label = 'sales_db_20251010_full'" in baseline_query
     
     show_partitions_query = db.query.call_args_list[2][0][0]
-    assert "SHOW PARTITIONS FROM sales_db.fact_sales" in show_partitions_query
+    assert "SHOW PARTITIONS FROM `sales_db`.`fact_sales`" in show_partitions_query
 
 
 def test_should_fail_when_no_full_backup_found(mocker):
@@ -114,10 +114,10 @@ def test_should_build_incremental_backup_command():
     
     command = planner.build_incremental_backup_command(partitions, repository, label, database)
     
-    expected = """BACKUP DATABASE sales_db SNAPSHOT sales_db_20251015_incremental
-    TO my_repo
-    ON (TABLE fact_sales PARTITION (p20251015, p20251014))"""
-    
+    expected = """BACKUP DATABASE `sales_db` SNAPSHOT `sales_db_20251015_incremental`
+    TO `my_repo`
+    ON (TABLE `fact_sales` PARTITION (`p20251015`, `p20251014`))"""
+
     assert command == expected
 
 
@@ -130,9 +130,9 @@ def test_should_handle_single_partition():
     partitions = [{"database": "db1", "table": "table1", "partition_name": "p1"}]
     command = planner.build_incremental_backup_command(partitions, "repo", "label", "db1")
     
-    assert "TABLE table1 PARTITION (p1)" in command
-    assert "BACKUP DATABASE db1 SNAPSHOT label" in command
-    assert "TO repo" in command
+    assert "TABLE `table1` PARTITION (`p1`)" in command
+    assert "BACKUP DATABASE `db1` SNAPSHOT `label`" in command
+    assert "TO `repo`" in command
 
 
 def test_should_format_date_correctly_in_query(mocker):
@@ -153,7 +153,7 @@ def test_should_format_date_correctly_in_query(mocker):
     planner.find_recent_partitions(db, "sales_db", group_name="daily_incremental")
     
     partitions_query = db.query.call_args_list[1][0][0]
-    assert "SHOW PARTITIONS FROM sales_db.fact_sales" in partitions_query
+    assert "SHOW PARTITIONS FROM `sales_db`.`fact_sales`" in partitions_query
 
 
 def test_should_build_full_backup_command_with_wildcard(mocker):
@@ -166,8 +166,8 @@ def test_should_build_full_backup_command_with_wildcard(mocker):
     
     command = planner.build_full_backup_command(db, "monthly_full", "my_repo", "sales_db_20251015_full", "sales_db")
     
-    expected = """BACKUP DATABASE sales_db SNAPSHOT sales_db_20251015_full
-    TO my_repo"""
+    expected = """BACKUP DATABASE `sales_db` SNAPSHOT `sales_db_20251015_full`
+    TO `my_repo`"""
     assert command == expected
 
 
@@ -181,10 +181,10 @@ def test_should_build_full_backup_command_with_specific_tables(mocker):
     
     command = planner.build_full_backup_command(db, "weekly_dimensions", "my_repo", "weekly_backup_20251015", "sales_db")
     
-    expected = """BACKUP DATABASE sales_db SNAPSHOT weekly_backup_20251015
-    TO my_repo
-    ON (TABLE dim_customers,
-        TABLE dim_products)"""
+    expected = """BACKUP DATABASE `sales_db` SNAPSHOT `weekly_backup_20251015`
+    TO `my_repo`
+    ON (TABLE `dim_customers`,
+        TABLE `dim_products`)"""
     assert command == expected
 
 
@@ -451,13 +451,13 @@ def test_find_recent_partitions_handles_wildcard_group(mocker):
     assert {"database": "sales_db", "table": "dim_customers", "partition_name": "p20251014"} in partitions
     
     show_tables_query = db.query.call_args_list[1][0][0]
-    assert "SHOW TABLES FROM sales_db" in show_tables_query
+    assert "SHOW TABLES FROM `sales_db`" in show_tables_query
     
     show_partitions_query_1 = db.query.call_args_list[2][0][0]
-    assert "SHOW PARTITIONS FROM sales_db.fact_sales" in show_partitions_query_1
+    assert "SHOW PARTITIONS FROM `sales_db`.`fact_sales`" in show_partitions_query_1
     
     show_partitions_query_2 = db.query.call_args_list[3][0][0]
-    assert "SHOW PARTITIONS FROM sales_db.dim_customers" in show_partitions_query_2
+    assert "SHOW PARTITIONS FROM `sales_db`.`dim_customers`" in show_partitions_query_2
 
 
 def test_find_recent_partitions_with_multiple_tables_mixed_timestamps(mocker):
@@ -504,10 +504,10 @@ def test_find_recent_partitions_with_multiple_tables_mixed_timestamps(mocker):
     assert db.query.call_count == 4
     
     show_partitions_query_1 = db.query.call_args_list[1][0][0]
-    assert "SHOW PARTITIONS FROM sales_db.fact_sales" in show_partitions_query_1
+    assert "SHOW PARTITIONS FROM `sales_db`.`fact_sales`" in show_partitions_query_1
     
     show_partitions_query_2 = db.query.call_args_list[2][0][0]
-    assert "SHOW PARTITIONS FROM sales_db.fact_orders" in show_partitions_query_2
+    assert "SHOW PARTITIONS FROM `sales_db`.`fact_orders`" in show_partitions_query_2
     
     show_partitions_query_3 = db.query.call_args_list[3][0][0]
-    assert "SHOW PARTITIONS FROM sales_db.dim_products" in show_partitions_query_3
+    assert "SHOW PARTITIONS FROM `sales_db`.`dim_products`" in show_partitions_query_3

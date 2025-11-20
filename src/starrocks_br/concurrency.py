@@ -1,5 +1,5 @@
 from typing import Literal, List, Tuple
-from . import logger
+from . import logger, utils
 
 
 def reserve_job_slot(db, scope: str, label: str) -> None:
@@ -57,10 +57,10 @@ def _raise_concurrency_conflict(scope: str, active_jobs: List[Tuple[str, str, st
 
 def _insert_new_job(db, scope: str, label: str) -> None:
     """Insert a new active job record."""
-    sql = (
-        "INSERT INTO ops.run_status (scope, label, state, started_at) "
-        "VALUES ('%s','%s','ACTIVE', NOW())" % (scope, label)
-    )
+    sql = f"""
+        INSERT INTO ops.run_status (scope, label, state, started_at)
+        VALUES ({utils.quote_value(scope)}, {utils.quote_value(label)}, 'ACTIVE', NOW())
+    """
     db.execute(sql)
 
 
@@ -118,7 +118,7 @@ def _check_backup_job_in_database(db, database_name: str, label: str) -> str:
         None if job not found in this database
     """
     try:
-        show_backup_query = f"SHOW BACKUP FROM {database_name}"
+        show_backup_query = f"SHOW BACKUP FROM {utils.quote_identifier(database_name)}"
         backup_rows = db.query(show_backup_query)
         
         if not backup_rows:
@@ -153,10 +153,11 @@ def _extract_backup_info(result) -> Tuple[str, str]:
 
 def _cleanup_stale_job(db, scope: str, label: str) -> None:
     """Clean up a stale job by updating its state to CANCELLED."""
-    sql = (
-        "UPDATE ops.run_status SET state='CANCELLED', finished_at=NOW() "
-        "WHERE scope='%s' AND label='%s' AND state='ACTIVE'" % (scope, label)
-    )
+    sql = f"""
+        UPDATE ops.run_status
+        SET state='CANCELLED', finished_at=NOW()
+        WHERE scope={utils.quote_value(scope)} AND label={utils.quote_value(label)} AND state='ACTIVE'
+    """
     db.execute(sql)
 
 
@@ -170,8 +171,9 @@ def complete_job_slot(
 
     Simple approach: update the same row by scope/label.
     """
-    sql = (
-        "UPDATE ops.run_status SET state='%s', finished_at=NOW() WHERE scope='%s' AND label='%s'"
-        % (final_state, scope, label)
-    )
+    sql = f"""
+        UPDATE ops.run_status
+        SET state={utils.quote_value(final_state)}, finished_at=NOW()
+        WHERE scope={utils.quote_value(scope)} AND label={utils.quote_value(label)}
+    """
     db.execute(sql)

@@ -1,7 +1,7 @@
 import time
 import datetime
 from typing import Dict, List, Optional
-from . import history, concurrency, logger
+from . import history, concurrency, logger, utils
 
 MAX_POLLS = 86400 # 1 day
 
@@ -19,7 +19,7 @@ def get_snapshot_timestamp(db, repo_name: str, snapshot_name: str) -> str:
     Raises:
         ValueError: If snapshot is not found in the repository
     """
-    query = f"SHOW SNAPSHOT ON {repo_name} WHERE Snapshot = '{snapshot_name}'"
+    query = f"SHOW SNAPSHOT ON {utils.quote_identifier(repo_name)} WHERE Snapshot = {utils.quote_value(snapshot_name)}"
     
     rows = db.query(query)
     if not rows:
@@ -48,10 +48,10 @@ def build_partition_restore_command(
     backup_timestamp: str,
 ) -> str:
     """Build RESTORE command for single partition recovery."""
-    return f"""RESTORE SNAPSHOT {backup_label}
-    FROM {repository}
-    DATABASE {database}
-    ON (TABLE {table} PARTITION ({partition}))
+    return f"""RESTORE SNAPSHOT {utils.quote_identifier(backup_label)}
+    FROM {utils.quote_identifier(repository)}
+    DATABASE {utils.quote_identifier(database)}
+    ON (TABLE {utils.quote_identifier(table)} PARTITION ({utils.quote_identifier(partition)}))
     PROPERTIES ("backup_timestamp" = "{backup_timestamp}")"""
 
 
@@ -63,10 +63,10 @@ def build_table_restore_command(
     backup_timestamp: str,
 ) -> str:
     """Build RESTORE command for full table recovery."""
-    return f"""RESTORE SNAPSHOT {backup_label}
-    FROM {repository}
-    DATABASE {database}
-    ON (TABLE {table})
+    return f"""RESTORE SNAPSHOT {utils.quote_identifier(backup_label)}
+    FROM {utils.quote_identifier(repository)}
+    DATABASE {utils.quote_identifier(database)}
+    ON (TABLE {utils.quote_identifier(table)})
     PROPERTIES ("backup_timestamp" = "{backup_timestamp}")"""
 
 
@@ -77,9 +77,9 @@ def build_database_restore_command(
     backup_timestamp: str,
 ) -> str:
     """Build RESTORE command for full database recovery."""
-    return f"""RESTORE SNAPSHOT {backup_label}
-    FROM {repository}
-    DATABASE {database}
+    return f"""RESTORE SNAPSHOT {utils.quote_identifier(backup_label)}
+    FROM {utils.quote_identifier(repository)}
+    DATABASE {utils.quote_identifier(database)}
     PROPERTIES ("backup_timestamp" = "{backup_timestamp}")"""
 
 
@@ -102,7 +102,7 @@ def poll_restore_status(db, label: str, database: str, max_polls: int = MAX_POLL
     Returns dictionary with keys: state, label
     Possible states: FINISHED, CANCELLED, TIMEOUT, ERROR, LOST
     """
-    query = f"SHOW RESTORE FROM {database}"
+    query = f"SHOW RESTORE FROM {utils.quote_identifier(database)}"
     first_poll = True
     last_state = None
     poll_count = 0
@@ -240,7 +240,7 @@ def find_restore_pair(db, target_label: str) -> List[str]:
     query = f"""
     SELECT label, backup_type, finished_at
     FROM ops.backup_history
-    WHERE label = '{target_label}'
+    WHERE label = {utils.quote_value(target_label)}
     AND status = 'FINISHED'
     """
     
@@ -265,8 +265,8 @@ def find_restore_pair(db, target_label: str) -> List[str]:
         FROM ops.backup_history
         WHERE backup_type = 'full'
         AND status = 'FINISHED'
-        AND label LIKE '{database_name}_%'
-        AND finished_at < '{target_info["finished_at"]}'
+        AND label LIKE {utils.quote_value(f'{database_name}_%')}
+        AND finished_at < {utils.quote_value(target_info["finished_at"])}
         ORDER BY finished_at DESC
         LIMIT 1
         """
@@ -308,7 +308,7 @@ def get_tables_from_backup(db, label: str, group: Optional[str] = None, table: O
     query = f"""
     SELECT DISTINCT database_name, table_name
     FROM ops.backup_partitions
-    WHERE label = '{label}'
+    WHERE label = {utils.quote_value(label)}
     ORDER BY database_name, table_name
     """
     
@@ -331,7 +331,7 @@ def get_tables_from_backup(db, label: str, group: Optional[str] = None, table: O
         group_query = f"""
         SELECT database_name, table_name
         FROM ops.table_inventory
-        WHERE inventory_group = '{group}'
+        WHERE inventory_group = {utils.quote_value(group)}
         """
         
         group_rows = db.query(group_query)
@@ -342,7 +342,7 @@ def get_tables_from_backup(db, label: str, group: Optional[str] = None, table: O
         for row in group_rows:
             database_name, table_name = row[0], row[1]
             if table_name == '*':
-                show_tables_query = f"SHOW TABLES FROM {database_name}"
+                show_tables_query = f"SHOW TABLES FROM {utils.quote_identifier(database_name)}"
                 try:
                     tables_rows = db.query(show_tables_query)
                     for table_row in tables_rows:
@@ -481,13 +481,13 @@ def _build_restore_command_with_rename(backup_label: str, repo_name: str, tables
     for table in tables:
         _, table_name = table.split('.', 1)
         temp_table_name = f"{table_name}{rename_suffix}"
-        table_clauses.append(f"TABLE {table_name} AS {temp_table_name}")
-    
+        table_clauses.append(f"TABLE {utils.quote_identifier(table_name)} AS {utils.quote_identifier(temp_table_name)}")
+
     on_clause = ",\n    ".join(table_clauses)
-    
-    return f"""RESTORE SNAPSHOT {backup_label}
-    FROM {repo_name}
-    DATABASE {database}
+
+    return f"""RESTORE SNAPSHOT {utils.quote_identifier(backup_label)}
+    FROM {utils.quote_identifier(repo_name)}
+    DATABASE {utils.quote_identifier(database)}
     ON ({on_clause})
     PROPERTIES ("backup_timestamp" = "{backup_timestamp}")"""
 
@@ -497,13 +497,13 @@ def _build_restore_command_without_rename(backup_label: str, repo_name: str, tab
     table_clauses = []
     for table in tables:
         _, table_name = table.split('.', 1)
-        table_clauses.append(f"TABLE {table_name}")
-    
+        table_clauses.append(f"TABLE {utils.quote_identifier(table_name)}")
+
     on_clause = ",\n    ".join(table_clauses)
-    
-    return f"""RESTORE SNAPSHOT {backup_label}
-    FROM {repo_name}
-    DATABASE {database}
+
+    return f"""RESTORE SNAPSHOT {utils.quote_identifier(backup_label)}
+    FROM {utils.quote_identifier(repo_name)}
+    DATABASE {utils.quote_identifier(database)}
     ON ({on_clause})
     PROPERTIES ("backup_timestamp" = "{backup_timestamp}")"""
 
@@ -529,9 +529,9 @@ def _perform_atomic_rename(db, tables: List[str], rename_suffix: str) -> Dict:
             database, table_name = table.split('.', 1)
             temp_table_name = f"{table_name}{rename_suffix}"
             backup_table_name = _generate_timestamped_backup_name(table_name)
-            
-            rename_statements.append(f"ALTER TABLE {database}.{table_name} RENAME {backup_table_name}")
-            rename_statements.append(f"ALTER TABLE {database}.{temp_table_name} RENAME {table_name}")
+
+            rename_statements.append(f"ALTER TABLE {utils.build_qualified_table_name(database, table_name)} RENAME {utils.quote_identifier(backup_table_name)}")
+            rename_statements.append(f"ALTER TABLE {utils.build_qualified_table_name(database, temp_table_name)} RENAME {utils.quote_identifier(table_name)}")
         
         for statement in rename_statements:
             db.execute(statement)

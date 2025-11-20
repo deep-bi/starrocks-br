@@ -17,7 +17,7 @@ def test_should_get_snapshot_timestamp_from_repository(mocker):
     assert timestamp == "2025-10-21-13-51-17-465"
     
     query = db.query.call_args[0][0]
-    assert "SHOW SNAPSHOT ON my_repo" in query
+    assert "SHOW SNAPSHOT ON `my_repo`" in query
     assert "Snapshot = 'sales_db_20251015_full'" in query
 
 
@@ -74,12 +74,12 @@ def test_should_build_partition_restore_command():
         backup_timestamp="2025-10-21-13-51-17-465",
     )
     
-    expected = """RESTORE SNAPSHOT sales_db_20251015_incremental
-    FROM my_repo
-    DATABASE sales_db
-    ON (TABLE fact_sales PARTITION (p20251015))
+    expected = """RESTORE SNAPSHOT `sales_db_20251015_incremental`
+    FROM `my_repo`
+    DATABASE `sales_db`
+    ON (TABLE `fact_sales` PARTITION (`p20251015`))
     PROPERTIES ("backup_timestamp" = "2025-10-21-13-51-17-465")"""
-    
+
     assert command == expected
 
 
@@ -92,12 +92,12 @@ def test_should_build_table_restore_command():
         backup_timestamp="2025-10-21-13-51-17-465",
     )
     
-    expected = """RESTORE SNAPSHOT weekly_backup_20251015
-    FROM my_repo
-    DATABASE sales_db
-    ON (TABLE dim_customers)
+    expected = """RESTORE SNAPSHOT `weekly_backup_20251015`
+    FROM `my_repo`
+    DATABASE `sales_db`
+    ON (TABLE `dim_customers`)
     PROPERTIES ("backup_timestamp" = "2025-10-21-13-51-17-465")"""
-    
+
     assert command == expected
 
 
@@ -109,11 +109,11 @@ def test_should_build_database_restore_command():
         backup_timestamp="2025-10-21-13-51-17-465",
     )
     
-    expected = """RESTORE SNAPSHOT sales_db_20251015_monthly
-    FROM my_repo
-    DATABASE sales_db
+    expected = """RESTORE SNAPSHOT `sales_db_20251015_monthly`
+    FROM `my_repo`
+    DATABASE `sales_db`
     PROPERTIES ("backup_timestamp" = "2025-10-21-13-51-17-465")"""
-    
+
     assert command == expected
 
 
@@ -150,7 +150,7 @@ def test_should_query_correct_show_restore_syntax(mocker):
     restore.poll_restore_status(db, "restore_job", "test_db", max_polls=1, poll_interval=0.001)
     
     query = db.query.call_args[0][0]
-    assert "SHOW RESTORE FROM test_db" in query
+    assert "SHOW RESTORE FROM `test_db`" in query
 
 
 def test_should_log_restore_history(mocker):
@@ -219,11 +219,11 @@ def test_should_build_partition_restore_command_with_special_characters():
         backup_timestamp="2025-10-21-13-51-17-465",
     )
     
-    assert "RESTORE SNAPSHOT backup_2025.01.15" in command
-    assert "FROM repo-with-special.chars" in command
-    assert "DATABASE test-db_2025" in command
-    assert "TABLE fact-table.sales" in command
-    assert "PARTITION (p2025-01-15)" in command
+    assert "RESTORE SNAPSHOT `backup_2025.01.15`" in command
+    assert "FROM `repo-with-special.chars`" in command
+    assert "DATABASE `test-db_2025`" in command
+    assert "TABLE `fact-table.sales`" in command
+    assert "PARTITION (`p2025-01-15`)" in command
     assert 'PROPERTIES ("backup_timestamp" = "2025-10-21-13-51-17-465")' in command
 
 
@@ -237,10 +237,10 @@ def test_should_build_table_restore_command_with_special_characters():
         backup_timestamp="2025-10-21-13-51-17-465",
     )
     
-    assert "RESTORE SNAPSHOT backup_2025.01.15" in command
-    assert "FROM repo-with-special.chars" in command
-    assert "DATABASE test-db_2025" in command
-    assert "TABLE fact-table.sales" in command
+    assert "RESTORE SNAPSHOT `backup_2025.01.15`" in command
+    assert "FROM `repo-with-special.chars`" in command
+    assert "DATABASE `test-db_2025`" in command
+    assert "TABLE `fact-table.sales`" in command
     assert 'PROPERTIES ("backup_timestamp" = "2025-10-21-13-51-17-465")' in command
 
 
@@ -253,9 +253,9 @@ def test_should_build_database_restore_command_with_special_characters():
         backup_timestamp="2025-10-21-13-51-17-465",
     )
     
-    assert "RESTORE SNAPSHOT backup_2025.01.15" in command
-    assert "FROM repo-with-special.chars" in command
-    assert "DATABASE test-db_2025" in command
+    assert "RESTORE SNAPSHOT `backup_2025.01.15`" in command
+    assert "FROM `repo-with-special.chars`" in command
+    assert "DATABASE `test-db_2025`" in command
     assert 'PROPERTIES ("backup_timestamp" = "2025-10-21-13-51-17-465")' in command
 
 
@@ -335,7 +335,7 @@ def test_should_query_correct_show_restore_syntax_with_label():
     restore.poll_restore_status(db, "restore_job", "test_db", max_polls=1, poll_interval=0.001)
     
     query = db.query.call_args[0][0]
-    assert "SHOW RESTORE FROM test_db" in query
+    assert "SHOW RESTORE FROM `test_db`" in query
 
 
 def test_should_handle_empty_restore_status_result():
@@ -877,7 +877,7 @@ def test_should_get_tables_from_backup_with_wildcard_group_filter(mocker):
     assert db.query.call_count == 3
     
     calls = [call[0][0] for call in db.query.call_args_list]
-    assert "SHOW TABLES FROM sales_db" in calls
+    assert "SHOW TABLES FROM `sales_db`" in calls
 
 
 def test_should_get_tables_from_backup_with_table_filter(mocker):
@@ -991,11 +991,11 @@ def test_should_build_restore_command_with_rename():
     
     command = restore._build_restore_command_with_rename(backup_label, repo_name, tables, rename_suffix, database, backup_timestamp)
     
-    assert "RESTORE SNAPSHOT sales_db_20251015_full" in command
-    assert "FROM my_repo" in command
-    assert "DATABASE sales_db" in command
-    assert "TABLE fact_sales AS fact_sales_restored" in command
-    assert "TABLE dim_customers AS dim_customers_restored" in command
+    assert "RESTORE SNAPSHOT `sales_db_20251015_full`" in command
+    assert "FROM `my_repo`" in command
+    assert "DATABASE `sales_db`" in command
+    assert "TABLE `fact_sales` AS `fact_sales_restored`" in command
+    assert "TABLE `dim_customers` AS `dim_customers_restored`" in command
     assert 'PROPERTIES ("backup_timestamp" = "2025-10-21-13-51-17-465")' in command
 
 
@@ -1011,11 +1011,11 @@ def test_should_build_restore_command_without_rename():
 
     print("command: ", command)
     
-    assert "RESTORE SNAPSHOT sales_db_20251016_inc" in command
-    assert "FROM my_repo" in command
-    assert "DATABASE sales_db" in command
-    assert "TABLE fact_sales" in command
-    assert "TABLE dim_customers" in command
+    assert "RESTORE SNAPSHOT `sales_db_20251016_inc`" in command
+    assert "FROM `my_repo`" in command
+    assert "DATABASE `sales_db`" in command
+    assert "TABLE `fact_sales`" in command
+    assert "TABLE `dim_customers`" in command
     assert "AS " not in command
     assert 'PROPERTIES ("backup_timestamp" = "2025-10-21-13-51-17-465")' in command
 
@@ -1033,13 +1033,13 @@ def test_should_perform_atomic_rename(mocker):
     
     calls = [call[0][0] for call in db.execute.call_args_list]
     
-    assert "ALTER TABLE sales_db.fact_sales_restored RENAME fact_sales" in calls
-    assert "ALTER TABLE sales_db.dim_customers_restored RENAME dim_customers" in calls
-    
-    backup_rename_pattern = re.compile(r"ALTER TABLE sales_db\.fact_sales RENAME fact_sales_backup_\d{8}_\d{6}")
+    assert "ALTER TABLE `sales_db`.`fact_sales_restored` RENAME `fact_sales`" in calls
+    assert "ALTER TABLE `sales_db`.`dim_customers_restored` RENAME `dim_customers`" in calls
+
+    backup_rename_pattern = re.compile(r"ALTER TABLE `sales_db`\.`fact_sales` RENAME `fact_sales_backup_\d{8}_\d{6}`")
     assert any(backup_rename_pattern.match(call) for call in calls), "Expected timestamped backup rename for fact_sales"
-    
-    backup_rename_pattern = re.compile(r"ALTER TABLE sales_db\.dim_customers RENAME dim_customers_backup_\d{8}_\d{6}")
+
+    backup_rename_pattern = re.compile(r"ALTER TABLE `sales_db`\.`dim_customers` RENAME `dim_customers_backup_\d{8}_\d{6}`")
     assert any(backup_rename_pattern.match(call) for call in calls), "Expected timestamped backup rename for dim_customers"
 
 
@@ -1246,4 +1246,4 @@ def test_should_include_correct_timestamp_in_restore_commands(mocker):
     restore_command = execute_restore_mock.call_args[0][1]
     
     assert f'PROPERTIES ("backup_timestamp" = "{mock_timestamp}")' in restore_command
-    assert "DATABASE sales_db" in restore_command
+    assert "DATABASE `sales_db`" in restore_command
