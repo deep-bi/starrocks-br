@@ -60,7 +60,7 @@ pip install starrocks-br
 
 ### Option 2: Standalone Executable
 
-Download from [releases](https://github.com/deep-bi/starrocks-br/releases/latest):
+Download from [releases](https://github.com/deep-bi/starrocks-backup-and-restore/releases/latest):
 
 ```bash
 # Linux
