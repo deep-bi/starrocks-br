@@ -6,14 +6,19 @@ Full and incremental backup automation for StarRocks shared-nothing clusters.
 
 📋 **[Release Notes & Changelog](CHANGELOG.md)**
 
-## Table of Contents
+## Documentation
 
-- [Why This Tool?](#why-this-tool)
-- [Documentation](#documentation)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [Basic Usage](#basic-usage)
-- [How It Works](#how-it-works)
+- [Why This Tool?](#why-this-tool) (this page)
+- [Installation](#installation) (this page)
+- [Configuration](#configuration) (this page)
+- [Basic Usage](#basic-usage) (this page)
+- [How It Works](#how-it-works) (this page)
+- **[Getting Started](docs/getting-started.md)** - Step-by-step tutorial
+- **[Core Concepts](docs/core-concepts.md)** - Understand inventory groups, backup types, and restore chains
+- **[Installation Guide](docs/installation.md)** - All installation methods
+- **[Configuration Reference](docs/configuration.md)** - Config file reference and TLS setup
+- **[Commands Reference](docs/commands.md)** - Detailed command reference
+- **[Scheduling & Monitoring](docs/scheduling.md)** - Automate backups and monitor status
 
 ## Why This Tool?
 
@@ -38,15 +43,6 @@ This tool adds **incremental backup capabilities** to StarRocks by leveraging na
 - ✅ **Metadata management** - Dedicated `ops` database tracks all backup metadata and partition manifests
 
 In short: this tool transforms StarRocks's basic backup/restore commands into a **production-ready incremental backup solution**.
-
-## Documentation
-
-- **[Getting Started](docs/getting-started.md)** - Step-by-step tutorial
-- **[Core Concepts](docs/core-concepts.md)** - Understand inventory groups, backup types, and restore chains
-- **[Installation](docs/installation.md)** - All installation methods
-- **[Configuration](docs/configuration.md)** - Config file reference and TLS setup
-- **[Commands](docs/commands.md)** - Detailed command reference
-- **[Scheduling & Monitoring](docs/scheduling.md)** - Automate backups and monitor status
 
 ## Installation
 
